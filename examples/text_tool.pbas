@@ -1,0 +1,36 @@
+' Text Tool (M5a example): a window whose buttons rewrite a textbox with
+' general string expressions. The field is redrawn when each handler ends.
+DIM Text$ AS STRING
+DIM Out$ AS STRING
+DIM I AS INTEGER
+DIM Spaces AS INTEGER
+Text$ = "PcW16 BASIC compiler"
+WINDOW "Text Tool"
+TEXTBOX Text$, "Your text"
+LABEL "Reverse, Initials or Quit"
+BUTTON "Reverse", Reverse
+BUTTON "Initials", Initials
+BUTTON "Quit", Finish
+SUB Reverse
+    Out$ = ""
+    FOR I = LEN(Text$) TO 1 STEP -1
+        Out$ = Out$ + MID$(Text$, I, 1)
+    NEXT I
+    Text$ = Out$
+END SUB
+SUB Initials
+    Out$ = LEFT$(Text$, 1)
+    Spaces = 0
+    FOR I = 2 TO LEN(Text$)
+        IF MID$(Text$, I - 1, 1) = " " THEN
+            Out$ = Out$ + MID$(Text$, I, 1)
+            Spaces = Spaces + 1
+        END IF
+    NEXT I
+    MESSAGE "Initials: " + Out$ + " (" + STR$(Spaces + 1) + " words)"
+    Text$ = Out$ + " = " + Text$
+END SUB
+SUB Finish
+    EXIT
+END SUB
+END

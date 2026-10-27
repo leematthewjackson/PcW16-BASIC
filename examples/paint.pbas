@@ -1,0 +1,716 @@
+' PAINT (M12 Stage B): a black-and-white drawing program for the PcW16.
+'
+' Tools (buttons, the Tool menu, or a key on the canvas):
+'   Pencil (P)   draw freehand while the button is held
+'   Line (L)     press at one end, release at the other
+'   Box (B)      a rectangle outline, corner to corner
+'   Filled (F)   a rectangle filled with the current shade
+'   Eraser (E)   rub out to white, 8 x 8 pixels at a time
+'   Select (S)   drag a rectangle; Edit > Copy keeps it, Edit > Paste then
+'                places a copy where you next click (it is kept inside the
+'                picture: a copy never goes over the edge)
+' Shades (the Shade menu, or keys 0 - 8): 0 black, 1 - 7 Rosanne's grey
+' patterns from dark to light, 8 white. Filled boxes use the shade.
+' Undo (Ctrl+Z) takes back the last change and Redo (Ctrl+Y) puts it back.
+' Edit > Clear makes the whole picture white (Undo brings it back).
+' File > Sample draws a sample picture to start from (named HOUSE.PBI).
+'
+' Files: pictures are PBI1 files (docs/M12-BITMAP-FORMAT.md), 544 x 240
+' pixels. Save (Ctrl+S) keeps the previous file as NAME.BAK; Open and Save as
+' are in the Files window (Ctrl+O). New, Open and Quit ask about unsaved
+' changes. A smaller picture opens at the top left; a larger one is refused.
+' The program writes only the files you name (and their .NEW / .BAK copies),
+' in the build folder (\PCW\FOLDER01 by default).
+'
+' How it works: the screen is the picture while you draw. When a change is
+' finished it is captured (BITMAP GET) into one of two bitmaps, Pic1 and
+' Pic2, in turn; the other holds the picture before the change, which is
+' what Undo shows. The canvas is redrawn from the current one.
+' Build with --runtime-banks all (python3 tools/build.py examples/paint.pbas --runtime-banks all)
+INCLUDE "lib/app.pbas"
+
+CONST CW = 544
+CONST CH = 240
+CONST PENCIL = 1
+CONST LINETOOL = 2
+CONST BOXTOOL = 3
+CONST FILLTOOL = 4
+CONST ERASER = 5
+CONST SELECTOR = 6
+CONST PASTER = 7
+
+DIM Pic1 AS BITMAP * 544, 240
+DIM Pic2 AS BITMAP * 544, 240
+DIM Clip AS BITMAP * 544, 240
+DIM Cur AS INTEGER
+DIM CanUndo AS BOOLEAN
+DIM CanRedo AS BOOLEAN
+DIM HasClip AS BOOLEAN
+DIM Tool AS INTEGER
+DIM Shade AS INTEGER
+DIM Down AS BOOLEAN
+DIM X0 AS INTEGER
+DIM Y0 AS INTEGER
+DIM PX AS INTEGER
+DIM PY AS INTEGER
+DIM SelOn AS BOOLEAN
+DIM InFiles AS BOOLEAN
+DIM SX AS INTEGER
+DIM SY AS INTEGER
+DIM SW AS INTEGER
+DIM SH AS INTEGER
+DIM DocName$ AS STRING * 12
+DIM FileName$ AS STRING * 12
+DIM Target$ AS STRING * 12
+DIM TPencil AS BOOLEAN
+DIM TLine AS BOOLEAN
+DIM TBox AS BOOLEAN
+DIM TFill AS BOOLEAN
+DIM TEraser AS BOOLEAN
+DIM TSelect AS BOOLEAN
+DIM S0 AS BOOLEAN
+DIM S1 AS BOOLEAN
+DIM S2 AS BOOLEAN
+DIM S3 AS BOOLEAN
+DIM S4 AS BOOLEAN
+DIM S5 AS BOOLEAN
+DIM S6 AS BOOLEAN
+DIM S7 AS BOOLEAN
+DIM S8 AS BOOLEAN
+
+WINDOW Main, "PAINT", LARGE
+LABEL AppStatus$
+CANVAS 544, 240, PAINT Paint, MOUSE Mouse, KEYS Keys
+BUTTON "Pencil", UsePencil
+BUTTON "Line", UseLine
+BUTTON "Box", UseBox
+BUTTON "Filled", UseFill
+BUTTON "Eraser", UseEraser
+BUTTON "Select", UseSelect
+
+WINDOW Files, "Files", LARGE
+TEXTBOX FileName$, "Picture file (8.3, e.g. ART.PBI)"
+BUTTON "Open", OpenPic
+BUTTON "Save as", SaveAs
+BUTTON "Back", BackToMain
+
+MENU "File"
+    ITEM "New", NewPic, KEY "N"
+    ITEM "Open...", ShowFiles, KEY "O"
+    ITEM "Save", SavePic, KEY "S"
+    ITEM "Save as...", ShowFiles
+    ITEM "-"
+    ITEM "Sample", Sample
+    ITEM "-"
+    ITEM "Quit", Quit, KEY "Q"
+END MENU
+MENU "Edit"
+    ITEM "Undo", UndoStep, KEY "Z"
+    ITEM "Redo", RedoStep, KEY "Y"
+    ITEM "-"
+    ITEM "Copy", CopySel, KEY "C"
+    ITEM "Paste", PasteClip, KEY "V"
+    ITEM "-"
+    ITEM "Clear", ClearPic
+END MENU
+MENU "Tool"
+    ITEM "Pencil", UsePencil, TICK TPencil
+    ITEM "Line", UseLine, TICK TLine
+    ITEM "Box", UseBox, TICK TBox
+    ITEM "Filled box", UseFill, TICK TFill
+    ITEM "Eraser", UseEraser, TICK TEraser
+    ITEM "Select", UseSelect, TICK TSelect
+END MENU
+MENU "Shade"
+    ITEM "0 Black", Shade0, TICK S0
+    ITEM "1 Grey", Shade1, TICK S1
+    ITEM "2 Grey", Shade2, TICK S2
+    ITEM "3 Grey", Shade3, TICK S3
+    ITEM "4 Grey", Shade4, TICK S4
+    ITEM "5 Grey", Shade5, TICK S5
+    ITEM "6 Grey", Shade6, TICK S6
+    ITEM "7 Grey", Shade7, TICK S7
+    ITEM "8 White", Shade8, TICK S8
+END MENU
+
+' ---------------------------------------------------------------- status
+
+FUNCTION ToolName$() AS STRING
+    SELECT CASE Tool
+    CASE PENCIL
+        RETURN "Pencil"
+    CASE LINETOOL
+        RETURN "Line"
+    CASE BOXTOOL
+        RETURN "Box"
+    CASE FILLTOOL
+        RETURN "Filled"
+    CASE ERASER
+        RETURN "Eraser"
+    CASE SELECTOR
+        RETURN "Select"
+    END SELECT
+    RETURN "Paste"
+END FUNCTION
+
+SUB Show
+    LOCAL D$ AS STRING
+    IF AppDirty THEN
+        D$ = "*"
+    END IF
+    CALL AppSay(ToolName$() + " " + STR$(Shade) + " " + DocName$ + D$)
+END SUB
+
+SUB SetTool(T AS INTEGER)
+    CALL DropSel
+    Tool = T
+    TPencil = T = PENCIL
+    TLine = T = LINETOOL
+    TBox = T = BOXTOOL
+    TFill = T = FILLTOOL
+    TEraser = T = ERASER
+    TSelect = T = SELECTOR
+    CALL Show
+END SUB
+
+SUB SetShade(S AS INTEGER)
+    Shade = S
+    S0 = S = 0
+    S1 = S = 1
+    S2 = S = 2
+    S3 = S = 3
+    S4 = S = 4
+    S5 = S = 5
+    S6 = S = 6
+    S7 = S = 7
+    S8 = S = 8
+    CALL Show
+END SUB
+
+' ---------------------------------------------------------------- picture
+
+' The canvas from the current bitmap (a smaller picture at the top left,
+' on white), and the selection's outline.
+SUB Paint
+    IF Cur = 1 THEN
+        IF BITMAPW(Pic1) < CW OR BITMAPH(Pic1) < CH THEN
+            DRAW CLEAR
+        END IF
+        BITMAP PUT Pic1, 0, 0
+    ELSE
+        IF BITMAPW(Pic2) < CW OR BITMAPH(Pic2) < CH THEN
+            DRAW CLEAR
+        END IF
+        BITMAP PUT Pic2, 0, 0
+    END IF
+    IF SelOn THEN
+        CALL Outline
+    END IF
+END SUB
+
+' A finished change: capture the canvas into the other bitmap, which
+' becomes the current one; the old one is what Undo shows.
+SUB Commit
+    IF Cur = 1 THEN
+        BITMAP GET Pic2, 0, 0, CW, CH
+        Cur = 2
+    ELSE
+        BITMAP GET Pic1, 0, 0, CW, CH
+        Cur = 1
+    END IF
+    CanUndo = TRUE
+    CanRedo = FALSE
+    CALL AppChanged
+    CALL Show
+END SUB
+
+SUB UndoStep
+    IF NOT CanUndo THEN
+        CALL AppSay("Nothing to undo")
+        EXIT SUB
+    END IF
+    CALL DropSel
+    Cur = 3 - Cur
+    CALL Redraw
+    CanUndo = FALSE
+    CanRedo = TRUE
+    CALL AppChanged
+    CALL Show
+END SUB
+
+SUB RedoStep
+    IF NOT CanRedo THEN
+        CALL AppSay("Nothing to redo")
+        EXIT SUB
+    END IF
+    CALL DropSel
+    Cur = 3 - Cur
+    CALL Redraw
+    CanRedo = FALSE
+    CanUndo = TRUE
+    CALL AppChanged
+    CALL Show
+END SUB
+
+SUB ClearPic
+    IF NOT Ready() THEN
+        EXIT SUB
+    END IF
+    CALL DropSel
+    DRAW CLEAR
+    CALL Commit
+END SUB
+
+' ---------------------------------------------------------------- selection
+
+' The selection's outline in XOR ink: drawn twice, it is gone.
+SUB Outline
+    DRAW INK XOR
+    DRAW BOX SX, SY, SW, SH
+    DRAW INK BLACK
+END SUB
+
+SUB DropSel
+    IF SelOn AND NOT InFiles THEN
+        CALL Outline
+    END IF
+    SelOn = FALSE
+END SUB
+
+' Menus work in both windows, but the canvas is only on screen in Main:
+' a drawing command chosen in the Files window goes back to the picture
+' instead (choose it again there).
+FUNCTION Ready() AS BOOLEAN
+    IF InFiles THEN
+        CALL BackToMain
+        RETURN FALSE
+    END IF
+    RETURN TRUE
+END FUNCTION
+
+SUB Redraw
+    IF NOT InFiles THEN
+        CALL Paint
+    END IF
+END SUB
+
+SUB CopySel
+    IF NOT Ready() THEN
+        EXIT SUB
+    END IF
+    IF NOT SelOn THEN
+        CALL AppSay("Select an area first")
+        EXIT SUB
+    END IF
+    CALL Outline
+    BITMAP GET Clip, SX, SY, SW, SH
+    CALL Outline
+    HasClip = TRUE
+    CALL AppSay("Copied " + STR$(SW) + " x " + STR$(SH))
+END SUB
+
+SUB PasteClip
+    IF NOT HasClip THEN
+        CALL AppSay("Copy an area first")
+        EXIT SUB
+    END IF
+    CALL SetTool(PASTER)
+    CALL AppSay("Click to place the copy")
+END SUB
+
+' ---------------------------------------------------------------- drawing
+
+' The rectangle between X0, Y0 and X, Y (both corners included).
+SUB RectOf(X AS INTEGER, Y AS INTEGER)
+    SX = MIN(X0, X)
+    SY = MIN(Y0, Y)
+    SW = ABS(X - X0) + 1
+    SH = ABS(Y - Y0) + 1
+END SUB
+
+' The rubber band of the Line, Box, Filled and Select tools, in XOR ink.
+SUB Band(X AS INTEGER, Y AS INTEGER)
+    DRAW INK XOR
+    IF Tool = LINETOOL THEN
+        DRAW LINE X0, Y0, X, Y
+    ELSE
+        CALL RectOf(X, Y)
+        DRAW BOX SX, SY, SW, SH
+    END IF
+    DRAW INK BLACK
+END SUB
+
+SUB Rub(X AS INTEGER, Y AS INTEGER)
+    DRAW FILL MIN(MAX(X - 4, 0), CW - 8), MIN(MAX(Y - 4, 0), CH - 8), 8, 8, 8
+END SUB
+
+SUB Press(X AS INTEGER, Y AS INTEGER)
+    CALL DropSel
+    X0 = X
+    Y0 = Y
+    PX = X
+    PY = Y
+    Down = TRUE
+    SELECT CASE Tool
+    CASE PENCIL
+        DRAW PIXEL X, Y
+    CASE ERASER
+        CALL Rub(X, Y)
+    CASE PASTER
+        BITMAP PUT Clip, MIN(X, CW - BITMAPW(Clip)), MIN(Y, CH - BITMAPH(Clip))
+        Down = FALSE
+        CALL Commit
+    CASE ELSE
+        CALL Band(X, Y)
+    END SELECT
+END SUB
+
+SUB Drag(X AS INTEGER, Y AS INTEGER)
+    SELECT CASE Tool
+    CASE PENCIL
+        DRAW LINE PX, PY, X, Y
+    CASE ERASER
+        CALL Rub(X, Y)
+    CASE ELSE
+        CALL Band(PX, PY)
+        CALL Band(X, Y)
+    END SELECT
+    PX = X
+    PY = Y
+END SUB
+
+SUB Release(X AS INTEGER, Y AS INTEGER)
+    CALL Drag(X, Y)
+    Down = FALSE
+    SELECT CASE Tool
+    CASE LINETOOL
+        CALL Band(X, Y)
+        DRAW LINE X0, Y0, X, Y
+    CASE BOXTOOL
+        CALL Band(X, Y)
+        DRAW BOX SX, SY, SW, SH
+    CASE FILLTOOL
+        CALL Band(X, Y)
+        DRAW FILL SX, SY, SW, SH, Shade
+    CASE SELECTOR
+        ' the band stays as the selection's outline
+        SelOn = TRUE
+        CALL AppSay("Selected " + STR$(SW) + " x " + STR$(SH))
+        EXIT SUB
+    END SELECT
+    CALL Commit
+END SUB
+
+SUB Mouse
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    X = MIN(MAX(MOUSEX, 0), CW - 1)
+    Y = MIN(MAX(MOUSEY, 0), CH - 1)
+    SELECT CASE MOUSEEVENT
+    CASE 1
+        CALL Press(X, Y)
+    CASE 2
+        IF Down THEN
+            CALL Drag(X, Y)
+        END IF
+    CASE 3
+        IF Down THEN
+            CALL Release(X, Y)
+        END IF
+    END SELECT
+END SUB
+
+SUB Keys
+    LOCAL K AS INTEGER
+    K = KEYCODE
+    IF K >= 97 AND K <= 122 THEN
+        K = K - 32
+    END IF
+    IF Down THEN
+        EXIT SUB
+    END IF
+    SELECT CASE K
+    CASE 80
+        CALL SetTool(PENCIL)
+    CASE 76
+        CALL SetTool(LINETOOL)
+    CASE 66
+        CALL SetTool(BOXTOOL)
+    CASE 70
+        CALL SetTool(FILLTOOL)
+    CASE 69
+        CALL SetTool(ERASER)
+    CASE 83
+        CALL SetTool(SELECTOR)
+    CASE 48 TO 56
+        CALL SetShade(K - 48)
+    CASE 254
+        CALL Quit
+    END SELECT
+END SUB
+
+SUB UsePencil
+    CALL SetTool(PENCIL)
+END SUB
+
+SUB UseLine
+    CALL SetTool(LINETOOL)
+END SUB
+
+SUB UseBox
+    CALL SetTool(BOXTOOL)
+END SUB
+
+SUB UseFill
+    CALL SetTool(FILLTOOL)
+END SUB
+
+SUB UseEraser
+    CALL SetTool(ERASER)
+END SUB
+
+SUB UseSelect
+    CALL SetTool(SELECTOR)
+END SUB
+
+SUB Shade0
+    CALL SetShade(0)
+END SUB
+
+SUB Shade1
+    CALL SetShade(1)
+END SUB
+
+SUB Shade2
+    CALL SetShade(2)
+END SUB
+
+SUB Shade3
+    CALL SetShade(3)
+END SUB
+
+SUB Shade4
+    CALL SetShade(4)
+END SUB
+
+SUB Shade5
+    CALL SetShade(5)
+END SUB
+
+SUB Shade6
+    CALL SetShade(6)
+END SUB
+
+SUB Shade7
+    CALL SetShade(7)
+END SUB
+
+SUB Shade8
+    CALL SetShade(8)
+END SUB
+
+' ---------------------------------------------------------------- sample
+
+' A sample picture: a house in a garden under the sun, with every shade.
+SUB Sample
+    LOCAL I AS INTEGER
+    IF NOT Ready() THEN
+        EXIT SUB
+    END IF
+    IF NOT AppMayClose() THEN
+        EXIT SUB
+    END IF
+    CALL DropSel
+    DRAW CLEAR
+    DRAW FILL 0, 200, CW, 40, 5
+    DRAW LINE 0, 200, CW - 1, 200
+    FOR I = 0 TO 11
+        DRAW LINE 470 + 4 * I, 40, 470 + 4 * I + 2, 44
+    NEXT I
+    FOR I = 0 TO 7
+        DRAW LINE 480 - 3 * I, 20 + 3 * I, 520 + 3 * I, 20 + 3 * I
+    NEXT I
+    DRAW FILL 470, 18, 60, 44, 7
+    DRAW BOX 470, 18, 60, 44
+    DRAW FILL 120, 110, 160, 90, 6
+    DRAW BOX 120, 110, 160, 90
+    FOR I = 0 TO 40
+        DRAW LINE 120 + 2 * I, 110 - I, 280 - 2 * I, 110 - I
+    NEXT I
+    DRAW FILL 180, 150, 36, 50, 1
+    DRAW BOX 180, 150, 36, 50
+    DRAW FILL 136, 126, 30, 24, 8
+    DRAW BOX 136, 126, 30, 24
+    DRAW LINE 151, 126, 151, 149
+    DRAW FILL 234, 126, 30, 24, 8
+    DRAW BOX 234, 126, 30, 24
+    DRAW LINE 234, 138, 263, 138
+    FOR I = 0 TO 8
+        DRAW FILL 330 + 22 * I, 120, 20, 40, I
+        DRAW BOX 330 + 22 * I, 120, 20, 40
+        DRAW TEXT 336 + 22 * I, 162, STR$(I)
+    NEXT I
+    DRAW TEXT 330, 96, "PAINT for the PcW16"
+    CALL Commit
+    CanUndo = FALSE
+    DocName$ = "HOUSE.PBI"
+    CALL Show
+END SUB
+
+' ---------------------------------------------------------------- files
+
+FUNCTION PicError$(Code AS INTEGER) AS STRING
+    SELECT CASE Code
+    CASE 248
+        RETURN "not a picture"
+    CASE 252
+        RETURN "too large"
+    END SELECT
+    RETURN AppError$(Code)
+END FUNCTION
+
+' Target$ from FileName$: upper case, ".PBI" added when there is no dot.
+FUNCTION TargetOk() AS BOOLEAN
+    Target$ = UCASE$(FileName$)
+    IF LEN(Target$) = 0 THEN
+        MESSAGE "Type a file name"
+        RETURN FALSE
+    END IF
+    IF INSTR(Target$, ".") = 0 THEN
+        IF LEN(Target$) > 8 THEN
+            MESSAGE "A name has at most 8 characters before the dot"
+            RETURN FALSE
+        END IF
+        Target$ = Target$ + ".PBI"
+    END IF
+    RETURN TRUE
+END FUNCTION
+
+' Save the current picture as Target$; TRUE if it was saved.
+FUNCTION SaveTo() AS BOOLEAN
+    IF Cur = 1 THEN
+        BITMAP SAVE Pic1, Target$
+    ELSE
+        BITMAP SAVE Pic2, Target$
+    END IF
+    IF IOERR <> 0 THEN
+        MESSAGE "Not saved: " + PicError$(IOERR)
+        RETURN FALSE
+    END IF
+    DocName$ = Target$
+    CALL AppSaved
+    CALL Show
+    RETURN TRUE
+END FUNCTION
+
+' For lib/app.pbas: save under the document's name (or ask for one).
+FUNCTION AppSave() AS BOOLEAN
+    IF LEN(DocName$) = 0 THEN
+        CALL ShowFiles
+        RETURN FALSE
+    END IF
+    Target$ = DocName$
+    RETURN SaveTo()
+END FUNCTION
+
+SUB SavePic
+    LOCAL Done AS BOOLEAN
+    Done = AppSave()
+END SUB
+
+SUB SaveAs
+    LOCAL Done AS BOOLEAN
+    IF NOT TargetOk() THEN
+        EXIT SUB
+    END IF
+    Done = SaveTo()
+    IF Done THEN
+        CALL BackToMain
+    END IF
+END SUB
+
+' Open Target$ into the bitmap that is not current; only a good picture
+' that fits replaces the one on the canvas.
+SUB OpenPic
+    LOCAL W AS INTEGER
+    LOCAL H AS INTEGER
+    IF NOT TargetOk() THEN
+        EXIT SUB
+    END IF
+    IF NOT AppMayClose() THEN
+        EXIT SUB
+    END IF
+    IF Cur = 1 THEN
+        BITMAP LOAD Pic2, Target$
+        W = BITMAPW(Pic2)
+        H = BITMAPH(Pic2)
+    ELSE
+        BITMAP LOAD Pic1, Target$
+        W = BITMAPW(Pic1)
+        H = BITMAPH(Pic1)
+    END IF
+    IF IOERR <> 0 THEN
+        MESSAGE "Not opened: " + PicError$(IOERR)
+        CALL NoUndo
+        EXIT SUB
+    END IF
+    IF W > CW OR H > CH THEN
+        MESSAGE "Not opened: the picture is larger than " + STR$(CW) + " x " + STR$(CH)
+        CALL NoUndo
+        EXIT SUB
+    END IF
+    SelOn = FALSE
+    Cur = 3 - Cur
+    CanUndo = FALSE
+    CanRedo = FALSE
+    DocName$ = Target$
+    CALL AppSaved
+    CALL Show
+    CALL BackToMain
+END SUB
+
+' After a failed open the other bitmap may hold part of the file (or a
+' picture too large to show), so it is no longer the picture before the
+' last change: Undo and Redo are off until the next change.
+SUB NoUndo
+    CanUndo = FALSE
+    CanRedo = FALSE
+END SUB
+
+SUB NewPic
+    IF NOT Ready() THEN
+        EXIT SUB
+    END IF
+    IF NOT AppMayClose() THEN
+        EXIT SUB
+    END IF
+    CALL DropSel
+    DRAW CLEAR
+    CALL Commit
+    CanUndo = FALSE
+    DocName$ = ""
+    CALL AppSaved
+    CALL Show
+END SUB
+
+SUB ShowFiles
+    FileName$ = DocName$
+    InFiles = TRUE
+    SHOW Files
+END SUB
+
+SUB BackToMain
+    InFiles = FALSE
+    SHOW Main
+END SUB
+
+SUB Quit
+    IF AppMayClose() THEN
+        EXIT
+    END IF
+END SUB
+
+Cur = 1
+CALL SetTool(PENCIL)
+CALL SetShade(0)
+END

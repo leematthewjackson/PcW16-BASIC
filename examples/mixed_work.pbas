@@ -1,0 +1,14 @@
+' mixed_work.pbas: INTEGERs and a STRING variable combined in one FOR loop.
+' XAnne shows three per-leg reports, then "Head TRA tail ING len 8".
+DIM Leg AS INTEGER
+DIM Miles AS INTEGER
+DIM Size AS INTEGER
+DIM Word$ AS STRING
+Word$ = "TRACKING"
+FOR Leg = 1 TO 3
+    Miles = Miles + Leg * 7     ' 7, then 21, then 42
+    MESSAGE "Leg " + STR$(Leg) + " patch " + MID$(Word$, 2, 3) + " at " + STR$(Miles) + " mi"
+NEXT Leg
+Size = LEN(Word$)
+MESSAGE "Head " + LEFT$(Word$, 3) + " tail " + RIGHT$(Word$, 3) + " len " + STR$(Size)
+END

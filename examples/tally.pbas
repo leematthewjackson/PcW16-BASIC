@@ -1,0 +1,39 @@
+' Tally: a click counter with a running score (M3a example).
+' Combines button events with arithmetic and IF/ELSE logic:
+' every click costs 2 points, every third click earns 5 x clicks.
+DIM Clicks AS INTEGER
+DIM Cycle AS INTEGER
+DIM Score AS INTEGER
+Clicks = 0
+Cycle = 0
+Score = 100
+WINDOW "Tally Counter"
+LABEL "Add counts a click; Score reports"
+LABEL "Every third click earns a bonus"
+BUTTON "Add", AddClick
+BUTTON "Score", ShowScore
+BUTTON "Quit", QuitTally
+SUB AddClick
+    Clicks = Clicks + 1
+    Cycle = Cycle + 1
+    IF Cycle = 3 THEN
+        Cycle = 0
+        Score = Score + 5 * Clicks
+        MESSAGE "Click " + STR$(Clicks) + ": bonus, score " + STR$(Score)
+    ELSE
+        Score = Score - 2
+        MESSAGE "Click " + STR$(Clicks) + ": score " + STR$(Score)
+    END IF
+END SUB
+SUB ShowScore
+    IF Score >= 100 THEN
+        MESSAGE "Score " + STR$(Score) + " after " + STR$(Clicks) + " clicks: ahead"
+    ELSE
+        MESSAGE "Score " + STR$(Score) + " after " + STR$(Clicks) + " clicks: behind"
+    END IF
+END SUB
+SUB QuitTally
+    MESSAGE "Goodbye from Tally"
+    EXIT
+END SUB
+END

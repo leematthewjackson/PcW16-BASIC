@@ -1,0 +1,15 @@
+' File Limits (M4 example): how FILELOAD treats files that do not fit a
+' STRING. Reads only. The owner creates the three files on the host first:
+'   PBEXACT.TXT  63 letters  -> loaded (the most a 64-byte STRING holds)
+'   PBLONG.TXT   64 letters  -> refused: longer than 63 characters
+'   PBZERO.TXT   has a zero byte -> refused: not text
+DIM Text$ AS STRING
+Text$ = "start"
+FILELOAD "PBEXACT.TXT", Text$
+MESSAGE "PBEXACT gives " + STR$(LEN(Text$)) + " letters"
+Text$ = "start"
+FILELOAD "PBLONG.TXT", Text$
+MESSAGE "After PBLONG: " + Text$
+FILELOAD "PBZERO.TXT", Text$
+MESSAGE "After PBZERO: " + Text$
+END

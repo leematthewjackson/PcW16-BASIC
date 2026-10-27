@@ -1,0 +1,72 @@
+' Stopwatch (M6 Phase 1 example): a timer counts seconds while the watch
+' runs. Green starts, Red stops, F1 records a lap, Stop quits; the menu
+' resets the watch and can beep at every full minute.
+DIM Seconds AS INTEGER
+DIM Laps AS INTEGER
+DIM Running AS BOOLEAN
+DIM Shown$ AS STRING
+DIM LapText$ AS STRING
+DIM Part$ AS STRING
+WINDOW "Stopwatch"
+LABEL Shown$
+LABEL LapText$
+BUTTON "Start", StartIt, DEFAULT, KEY GREEN
+BUTTON "Stop", StopIt, KEY RED
+BUTTON "Lap", LapIt, KEY F1
+BUTTON "Quit", Finish, KEY STOP
+MENU "Watch"
+    ITEM "Reset", ResetIt, KEY "R"
+    ITEM "Beep each minute", ToggleBeep, TICK MinuteBeep
+END MENU
+TIMER Tick, EVERY 1
+SUB Format
+    ' Part$ = Seconds as m:ss
+    Part$ = STR$(Seconds MOD 60)
+    IF LEN(Part$) = 1 THEN
+        Part$ = "0" + Part$
+    END IF
+    Part$ = STR$(Seconds / 60) + ":" + Part$
+END SUB
+SUB Tick
+    IF Running THEN
+        Seconds = Seconds + 1
+        CALL Format
+        Shown$ = "Running " + Part$
+        IF MinuteBeep AND Seconds MOD 60 = 0 THEN
+            BEEP
+        END IF
+    END IF
+END SUB
+SUB StartIt
+    Running = TRUE
+    TIMER ON
+    CALL Format
+    Shown$ = "Running " + Part$
+END SUB
+SUB StopIt
+    Running = FALSE
+    TIMER OFF
+    CALL Format
+    Shown$ = "Stopped at " + Part$
+END SUB
+SUB LapIt
+    Laps = Laps + 1
+    CALL Format
+    LapText$ = "Lap " + STR$(Laps) + " at " + Part$
+END SUB
+SUB ResetIt
+    Running = FALSE
+    TIMER OFF
+    Seconds = 0
+    Laps = 0
+    Shown$ = "Ready"
+    LapText$ = ""
+END SUB
+SUB ToggleBeep
+    MinuteBeep = NOT MinuteBeep
+END SUB
+SUB Finish
+    EXIT
+END SUB
+Shown$ = "Ready"
+END

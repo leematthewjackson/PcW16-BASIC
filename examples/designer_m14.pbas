@@ -1,0 +1,1148 @@
+' DESIGNER (M13 Stage G): a visual designer for PcW16 screens. Lay out
+' boxes, panels, labels, buttons and icons on a 544 x 240 page, then save
+' the design, export it as a picture or as a PcW16 BASIC SUB that draws it,
+' or print it.
+'
+'   New objects   the buttons Box, Panel, Label, Button, Icon (a new object
+'                 appears at the top left, selected)
+'   Select        click an object: the topmost one under the pointer; eight
+'                 handles show. Click empty space: nothing selected
+'   Move          drag an object (an outline follows the pointer), or nudge
+'                 the selected one with the cursor keys
+'   Resize        drag one of its handles (icons keep their size)
+'   Properties    the Props button (or Ctrl+P): caption, place, size, shade
+'                 (for an icon: which icon, 1..6)
+'   Delete        the Delete key or Edit > Delete
+'   Order         Edit > To front, To back; Edit > Duplicate (Ctrl+D)
+'   Grid          Edit > Snap to grid: places and sizes in steps of 4
+' File: New, Open, Save (NAME.BAK kept), Save as, Sample, Export picture (a
+' PBI1 file: tools/pbimage.py export turns it into a PNG), Export BASIC (a
+' .BAS text file with SUB DrawDesign: INCLUDE it in a program), Print, Quit.
+' New, Open and Quit ask about unsaved changes.
+' The Files window takes a name; each button gives it its own extension,
+' whatever was typed: Open and Save as .DSN, Picture .PBI, BASIC .BAS, so
+' one never writes over another (M13 corrective: FORM.DSN typed for a
+' picture once replaced the design). An export is written whole to
+' DSGNTMP.PBI / DSGNTMP.BAS first and only then takes the place of the old
+' export (lib/files.pbas); the design, its .BAK and its .NEW are never
+' touched by an export.
+'
+' The scene file is a PDB1 database (LANGUAGE-SPEC §5.9: safe replacement,
+' a check over every byte, recovery from NAME.NEW / NAME.BAK) of DesignRec
+' records. Record 1 is a header: kind 0, the text "PCW16 DESIGN", the
+' scene format version (1) and the page size. Every other record is one
+' object, back to front. Open checks every record and refuses a file with
+' one out of range, naming the record, so a damaged or foreign file never
+' reaches the page. docs/M13-DESIGNER.md.
+' Icons come from P2ICONS.PBI (examples/assets, shared with PAINT II);
+' without it they are drawn as framed question marks.
+' M14 version of examples/designer.pbas (KI-99, M14-DEFECT-REGISTER F9, F11):
+' an export named DSGNTMP was its own temporary file, so SafeReplace deleted
+' the fresh export and failed (IOERR 2); a design named DSGNTMP shared
+' DSGNTMP.NEW / .BAK with the picture export. The Files window now refuses the
+' name DSGNTMP for every button ("DSGNTMP.PBI: invalid name"). designer.pbas is kept as accepted.
+' Build with --runtime-banks all (python3 tools/build.py examples/designer_m14.pbas --runtime-banks all)
+INCLUDE "lib/app.pbas"
+INCLUDE "lib/geom.pbas"
+INCLUDE "lib/scene.pbas"
+INCLUDE "lib/drag.pbas"
+INCLUDE "lib/handles.pbas"
+INCLUDE "lib/keys.pbas"
+INCLUDE "lib/files.pbas"
+
+CONST CW = 544
+CONST CH = 240
+CONST MAXOBJ = 100
+CONST VERSION = 1
+CONST MAGIC$ = "PCW16 DESIGN"
+CONST KBOX = 1
+CONST KPANEL = 2
+CONST KLABEL = 3
+CONST KBUTTON = 4
+CONST KICON = 5
+
+TYPE DesignRec
+    Kind AS INTEGER
+    X AS INTEGER
+    Y AS INTEGER
+    W AS INTEGER
+    H AS INTEGER
+    Shade AS INTEGER
+    Caption AS STRING * 30
+END TYPE
+
+DIM Objs(100) AS DesignRec BANKED
+DIM ObjN AS INTEGER
+DIM Disk(101) AS DesignRec BANKED
+DIM DiskN AS INTEGER
+DIM Icons AS BITMAP * 24, 144
+DIM Shot AS BITMAP * 544, 240
+DIM IconsOk AS BOOLEAN
+DIM Sel AS INTEGER
+DIM Mode AS INTEGER
+DIM Shoot AS BOOLEAN
+DIM Grab AS INTEGER
+DIM Snap AS BOOLEAN
+DIM InMain AS BOOLEAN
+DIM Painted AS BOOLEAN
+DIM DocName$ AS STRING * 12
+DIM FileName$ AS STRING * 12
+DIM Target$ AS STRING * 12
+DIM PCaption$ AS STRING * 30
+DIM PX AS INTEGER
+DIM PY AS INTEGER
+DIM PW AS INTEGER
+DIM PH AS INTEGER
+DIM PShade AS INTEGER
+DIM T$ AS STRING * 40
+
+WINDOW Main, "DESIGNER", LARGE
+LABEL AppStatus$
+CANVAS 544, 240, PAINT Paint, MOUSE Mouse, KEYS Keys
+BUTTON "Box", AddBox
+BUTTON "Panel", AddPanel
+BUTTON "Label", AddLabel
+BUTTON "Button", AddButton
+BUTTON "Icon", AddIcon
+BUTTON "Props", ShowProps
+
+WINDOW Props, "Properties", LARGE
+TEXTBOX PCaption$, "Caption (labels and buttons)"
+NUMBERBOX PX, "X (0 to 543)", MIN 0, MAX 543
+NUMBERBOX PY, "Y (0 to 239)", MIN 0, MAX 239
+NUMBERBOX PW, "Width (8 to 544)", MIN 8, MAX 544
+NUMBERBOX PH, "Height (8 to 240)", MIN 8, MAX 240
+NUMBERBOX PShade, "Shade 0-8 (an icon: 1-6)", MIN 0, MAX 8
+BUTTON "Apply", ApplyProps, DEFAULT
+BUTTON "Cancel", BackToMain
+
+WINDOW Files, "Files", LARGE
+TEXTBOX FileName$, "File name (8.3, e.g. FORM.DSN)"
+BUTTON "Open", OpenDesign
+BUTTON "Save as", SaveAs
+BUTTON "Picture", ExportPicture
+BUTTON "BASIC", ExportBasic
+BUTTON "Back", BackToMain
+
+MENU "File"
+    ITEM "New", NewDesign, KEY "N"
+    ITEM "Open...", ShowFiles, KEY "O"
+    ITEM "Save", SaveDesign, KEY "S"
+    ITEM "Save as...", ShowFiles
+    ITEM "Export...", ShowFiles
+    ITEM "Print", PrintDesign
+    ITEM "-"
+    ITEM "Sample", Sample
+    ITEM "-"
+    ITEM "Quit", Quit, KEY "Q"
+END MENU
+MENU "Edit"
+    ITEM "Properties...", ShowProps, KEY "P"
+    ITEM "Duplicate", Duplicate, KEY "D"
+    ITEM "Delete", DeleteSel
+    ITEM "-"
+    ITEM "To front", ToFront, KEY "F"
+    ITEM "To back", ToBack, KEY "B"
+    ITEM "-"
+    ITEM "Snap to grid", ToggleSnap, TICK Snap
+END MENU
+
+' ---------------------------------------------------------------- status
+
+' (Strings are passed in T$, the program's one scratch string, rather than
+' returned: each STRING result and call costs 65 bytes of the 16K block.)
+
+' T$ = the name of kind K.
+SUB KindName(K AS INTEGER)
+    SELECT CASE K
+    CASE KBOX
+        T$ = "Box"
+    CASE KPANEL
+        T$ = "Panel"
+    CASE KLABEL
+        T$ = "Label"
+    CASE KBUTTON
+        T$ = "Button"
+    CASE ELSE
+        T$ = "Icon"
+    END SELECT
+END SUB
+
+SUB Show
+    IF Sel > 0 THEN
+        CALL KindName(Objs(Sel).Kind)
+        T$ = T$ + " " + STR$(SceneX(Sel)) + "," + STR$(SceneY(Sel)) + " " + STR$(SceneW(Sel)) + "x" + STR$(SceneH(Sel))
+    ELSE
+        T$ = STR$(SceneN) + " objects " + DocName$
+    END IF
+    IF AppDirty THEN
+        T$ = T$ + "*"
+    END IF
+    CALL AppSay(T$)
+END SUB
+
+FUNCTION Visible() AS BOOLEAN
+    RETURN Painted AND InMain
+END FUNCTION
+
+' ---------------------------------------------------------------- drawing
+
+' T$ cut to its longest start that fits in W pixels (the caption is drawn,
+' not changed: one too long for its object shows its beginning).
+SUB Fit(W AS INTEGER)
+    WHILE LEN(T$) > 0 AND TEXTWIDTH(T$) > W
+        T$ = LEFT$(T$, LEN(T$) - 1)
+    WEND
+END SUB
+
+' Object I's caption in its rectangle: centred (Centre TRUE) or from the left.
+SUB DrawCaption(I AS INTEGER, Centre AS BOOLEAN)
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL W AS INTEGER
+    LOCAL H AS INTEGER
+    X = SceneX(I)
+    Y = SceneY(I)
+    W = SceneW(I)
+    H = SceneH(I)
+    IF H < 16 OR W < 8 THEN
+        EXIT SUB
+    END IF
+    T$ = Objs(I).Caption
+    CALL Fit(W - 6)
+    IF LEN(T$) = 0 THEN
+        EXIT SUB
+    END IF
+    IF Centre THEN
+        X = X + (W - TEXTWIDTH(T$)) / 2
+    ELSE
+        X = X + 3
+    END IF
+    DRAW TEXT X, Y + (H - 16) / 2, T$
+END SUB
+
+SUB DrawObj(I AS INTEGER)
+    LOCAL K AS INTEGER
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL W AS INTEGER
+    LOCAL H AS INTEGER
+    K = Objs(I).Kind
+    X = SceneX(I)
+    Y = SceneY(I)
+    W = SceneW(I)
+    H = SceneH(I)
+    SELECT CASE K
+    CASE KBOX
+        DRAW BOX X, Y, W, H
+    CASE KPANEL
+        DRAW FILL X, Y, W, H, Objs(I).Shade
+        DRAW BOX X, Y, W, H
+    CASE KLABEL
+        CALL DrawCaption(I, FALSE)
+    CASE KBUTTON
+        DRAW FILL X, Y, W, H, 8
+        DRAW BOX X, Y, W, H
+        IF W > 6 AND H > 6 THEN
+            DRAW BOX X + 2, Y + 2, W - 4, H - 4
+        END IF
+        CALL DrawCaption(I, TRUE)
+    CASE KICON
+        IF IconsOk THEN
+            BITMAP PUT Icons, X, Y, 0, (Objs(I).Shade - 1) * 24, 24, 24
+        ELSE
+            DRAW FILL X, Y, 24, 24, 8
+            DRAW BOX X, Y, 24, 24
+            DRAW TEXT X + 9, Y + 4, "?"
+        END IF
+    END SELECT
+END SUB
+
+' Redraw the dirty area (lib/scene.pbas): first grown until every object
+' that meets it lies inside it, so that redrawing those objects, back to
+' front, on white leaves everything exactly as a whole redraw would.
+SUB Refresh
+    LOCAL K AS INTEGER
+    LOCAL I AS INTEGER
+    LOCAL Grown AS BOOLEAN
+    LOCAL M AS BOOLEAN
+    M = Visible()
+    IF SceneDirtyW <= 0 OR NOT M THEN
+        CALL SceneClean
+        EXIT SUB
+    END IF
+    CALL HandlesHide
+    Grown = TRUE
+    WHILE Grown
+        Grown = FALSE
+        FOR K = 1 TO SceneN
+            I = SceneOrder(K)
+            M = GeomMeets(SceneDirtyX, SceneDirtyY, SceneDirtyW, SceneDirtyH, SceneX(I), SceneY(I), SceneW(I), SceneH(I))
+            IF M THEN
+                CALL GeomUnite(SceneDirtyX, SceneDirtyY, SceneDirtyW, SceneDirtyH, SceneX(I), SceneY(I), SceneW(I), SceneH(I))
+                IF GeomW <> SceneDirtyW OR GeomH <> SceneDirtyH THEN
+                    Grown = TRUE
+                    CALL SceneDirty(SceneX(I), SceneY(I), SceneW(I), SceneH(I))
+                END IF
+            END IF
+        NEXT K
+    WEND
+    DRAW FILL SceneDirtyX, SceneDirtyY, SceneDirtyW, SceneDirtyH, 8
+    FOR K = 1 TO SceneN
+        I = SceneOrder(K)
+        M = GeomMeets(SceneDirtyX, SceneDirtyY, SceneDirtyW, SceneDirtyH, SceneX(I), SceneY(I), SceneW(I), SceneH(I))
+        IF M THEN
+            CALL DrawObj(I)
+        END IF
+    NEXT K
+    CALL SceneClean
+    CALL ShowHandles
+END SUB
+
+SUB ShowHandles
+    LOCAL V AS BOOLEAN
+    V = Visible()
+    IF Sel > 0 AND V THEN
+        CALL HandlesShow(SceneX(Sel), SceneY(Sel), SceneW(Sel), SceneH(Sel))
+    END IF
+END SUB
+
+SUB DirtyObj(I AS INTEGER)
+    CALL SceneDirty(SceneX(I), SceneY(I), SceneW(I), SceneH(I))
+END SUB
+
+SUB Paint
+    Painted = TRUE
+    InMain = TRUE
+    DRAW CLEAR
+    CALL HandlesForget
+    CALL SceneClean
+    CALL SceneDirty(0, 0, CW, CH)
+    CALL Refresh
+    IF Shoot THEN
+        CALL HandlesHide
+        CALL SavePicture
+        CALL ShowHandles
+    END IF
+END SUB
+
+' The canvas was redrawn whole: no handles are on it any more.
+SUB HandlesForget
+    HandleShown = FALSE
+END SUB
+
+SUB SetSel(I AS INTEGER)
+    IF Visible() THEN
+        CALL HandlesHide
+    END IF
+    Sel = I
+    CALL ShowHandles
+    CALL Show
+END SUB
+
+' ---------------------------------------------------------------- objects
+
+FUNCTION Snapped(V AS INTEGER) AS INTEGER
+    IF Snap THEN
+        RETURN (V + 2) / 4 * 4
+    END IF
+    RETURN V
+END FUNCTION
+
+FUNCTION MinW(K AS INTEGER) AS INTEGER
+    IF K = KICON THEN
+        RETURN 24
+    END IF
+    RETURN 8
+END FUNCTION
+
+FUNCTION MinH(K AS INTEGER) AS INTEGER
+    SELECT CASE K
+    CASE KICON
+        RETURN 24
+    CASE KLABEL, KBUTTON
+        RETURN 16
+    END SELECT
+    RETURN 8
+END FUNCTION
+
+' A new object on top; FALSE (with a message) when the design is full.
+FUNCTION NewObj(K AS INTEGER, X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER, S AS INTEGER, C$ AS STRING) AS BOOLEAN
+    IF ObjN >= MAXOBJ THEN
+        CALL AppSay("Full: " + STR$(MAXOBJ) + " objects")
+        RETURN FALSE
+    END IF
+    CALL SceneAdd(X, Y, W, H)
+    ObjN = ObjN + 1
+    Objs(ObjN).Kind = K
+    Objs(ObjN).X = 0
+    Objs(ObjN).Y = 0
+    Objs(ObjN).W = 0
+    Objs(ObjN).H = 0
+    Objs(ObjN).Shade = S
+    Objs(ObjN).Caption = C$
+    RETURN TRUE
+END FUNCTION
+
+SUB AddKind(K AS INTEGER, W AS INTEGER, H AS INTEGER, S AS INTEGER, C$ AS STRING)
+    LOCAL Ok AS BOOLEAN
+    Ok = NewObj(K, 8, 8, W, H, S, C$)
+    IF NOT Ok THEN
+        EXIT SUB
+    END IF
+    CALL DirtyObj(SceneN)
+    CALL HandlesHide
+    Sel = SceneN
+    CALL Refresh
+    CALL AppChanged
+    CALL Show
+END SUB
+
+SUB AddBox
+    CALL AddKind(KBOX, 80, 48, 0, "")
+END SUB
+
+SUB AddPanel
+    CALL AddKind(KPANEL, 96, 56, 6, "")
+END SUB
+
+SUB AddLabel
+    CALL AddKind(KLABEL, 80, 16, 0, "Label")
+END SUB
+
+SUB AddButton
+    CALL AddKind(KBUTTON, 72, 24, 0, "OK")
+END SUB
+
+SUB AddIcon
+    CALL AddKind(KICON, 24, 24, 1, "")
+END SUB
+
+' Object I to X, Y, W, H (kept inside the page and at least its kind's
+' minimum size), redrawing what changed.
+SUB Place(I AS INTEGER, X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    LOCAL K AS INTEGER
+    K = Objs(I).Kind
+    IF K = KICON THEN
+        W = 24
+        H = 24
+    END IF
+    W = GeomClamp(W, MinW(K), CW)
+    H = GeomClamp(H, MinH(K), CH)
+    X = GeomClamp(X, 0, CW - W)
+    Y = GeomClamp(Y, 0, CH - H)
+    IF X = SceneX(I) AND Y = SceneY(I) AND W = SceneW(I) AND H = SceneH(I) THEN
+        EXIT SUB
+    END IF
+    CALL DirtyObj(I)
+    SceneX(I) = X
+    SceneY(I) = Y
+    SceneW(I) = W
+    SceneH(I) = H
+    CALL DirtyObj(I)
+    CALL Refresh
+    CALL AppChanged
+    CALL Show
+END SUB
+
+FUNCTION NeedSel() AS BOOLEAN
+    IF NOT InMain THEN
+        CALL BackToMain
+        RETURN FALSE
+    END IF
+    IF Sel = 0 THEN
+        CALL AppSay("Select an object first")
+        RETURN FALSE
+    END IF
+    RETURN TRUE
+END FUNCTION
+
+SUB DeleteSel
+    LOCAL I AS INTEGER
+    IF NOT NeedSel() THEN
+        EXIT SUB
+    END IF
+    I = Sel
+    CALL HandlesHide
+    Sel = 0
+    CALL DirtyObj(I)
+    CALL SceneRemove(I)
+    DB DELETE Objs, ObjN, I
+    CALL Refresh
+    CALL AppChanged
+    CALL Show
+END SUB
+
+SUB Duplicate
+    LOCAL I AS INTEGER
+    LOCAL Ok AS BOOLEAN
+    IF NOT NeedSel() THEN
+        EXIT SUB
+    END IF
+    I = Sel
+    Ok = NewObj(Objs(I).Kind, GeomClamp(SceneX(I) + 8, 0, CW - SceneW(I)), GeomClamp(SceneY(I) + 8, 0, CH - SceneH(I)), SceneW(I), SceneH(I), Objs(I).Shade, Objs(I).Caption)
+    IF Ok THEN
+        CALL HandlesHide
+        Sel = SceneN
+        CALL DirtyObj(Sel)
+        CALL Refresh
+        CALL AppChanged
+        CALL Show
+    END IF
+END SUB
+
+SUB ToFront
+    IF NOT NeedSel() THEN
+        EXIT SUB
+    END IF
+    CALL SceneToFront(Sel)
+    CALL DirtyObj(Sel)
+    CALL Refresh
+    CALL AppChanged
+END SUB
+
+SUB ToBack
+    IF NOT NeedSel() THEN
+        EXIT SUB
+    END IF
+    CALL SceneToBack(Sel)
+    CALL DirtyObj(Sel)
+    CALL Refresh
+    CALL AppChanged
+END SUB
+
+SUB ToggleSnap
+    Snap = NOT Snap
+END SUB
+
+' ---------------------------------------------------------------- mouse
+
+SUB Mouse
+    LOCAL K AS INTEGER
+    LOCAL I AS INTEGER
+    CALL DragMouse
+    SELECT CASE DragEvent
+    CASE 1
+        Mode = 0
+        IF Sel > 0 THEN
+            K = HandleAt(DragX, DragY, SceneX(Sel), SceneY(Sel), SceneW(Sel), SceneH(Sel))
+            IF K > 0 AND Objs(Sel).Kind <> KICON THEN
+                Mode = 2
+                Grab = K
+                EXIT SUB
+            END IF
+        END IF
+        I = SceneAt(DragX, DragY)
+        IF I <> Sel THEN
+            CALL SetSel(I)
+        END IF
+        IF I > 0 THEN
+            Mode = 1
+        END IF
+    CASE 2
+        IF Mode = 1 AND DragMoved THEN
+            CALL MovedTo
+            CALL DragShowFrame(HandX, HandY, HandW, HandH)
+        END IF
+        IF Mode = 2 THEN
+            CALL ResizedTo
+            CALL DragShowFrame(HandX, HandY, HandW, HandH)
+        END IF
+    CASE 3
+        CALL DragHide
+        IF Mode = 1 AND DragMoved THEN
+            CALL MovedTo
+            CALL Place(Sel, HandX, HandY, HandW, HandH)
+        END IF
+        IF Mode = 2 THEN
+            CALL ResizedTo
+            CALL Place(Sel, HandX, HandY, HandW, HandH)
+        END IF
+        Mode = 0
+    END SELECT
+END SUB
+
+' Where a move of the selected object would put it now, in HandX.. (kept
+' inside the page).
+SUB MovedTo
+    HandW = SceneW(Sel)
+    HandH = SceneH(Sel)
+    HandX = GeomClamp(Snapped(SceneX(Sel) + DragDX), 0, CW - HandW)
+    HandY = GeomClamp(Snapped(SceneY(Sel) + DragDY), 0, CH - HandH)
+END SUB
+
+SUB ResizedTo
+    LOCAL K AS INTEGER
+    K = Objs(Sel).Kind
+    CALL HandleResize(Grab, DragDX, DragDY, SceneX(Sel), SceneY(Sel), SceneW(Sel), SceneH(Sel), MinW(K), MinH(K))
+    CALL GeomClip(HandX, HandY, HandW, HandH, 0, 0, CW, CH)
+    HandX = GeomX
+    HandY = GeomY
+    HandW = MAX(GeomW, MinW(K))
+    HandH = MAX(GeomH, MinH(K))
+    IF Snap THEN
+        HandW = MAX(Snapped(HandW), MinW(K))
+        HandH = MAX(Snapped(HandH), MinH(K))
+    END IF
+END SUB
+
+SUB Keys
+    LOCAL K AS INTEGER
+    LOCAL D AS INTEGER
+    K = KEYCODE
+    IF DragOn THEN
+        IF K = KC_STOP THEN
+            CALL DragCancel
+            Mode = 0
+        END IF
+        EXIT SUB
+    END IF
+    D = 1
+    IF Snap THEN
+        D = 4
+    END IF
+    IF Sel > 0 THEN
+        SELECT CASE K
+        CASE KC_LEFT
+            CALL Place(Sel, SceneX(Sel) - D, SceneY(Sel), SceneW(Sel), SceneH(Sel))
+        CASE KC_RIGHT
+            CALL Place(Sel, SceneX(Sel) + D, SceneY(Sel), SceneW(Sel), SceneH(Sel))
+        CASE KC_UP
+            CALL Place(Sel, SceneX(Sel), SceneY(Sel) - D, SceneW(Sel), SceneH(Sel))
+        CASE KC_DOWN
+            CALL Place(Sel, SceneX(Sel), SceneY(Sel) + D, SceneW(Sel), SceneH(Sel))
+        CASE KC_DELETE, KC_BACKSPACE
+            CALL DeleteSel
+        END SELECT
+    END IF
+    IF K = KC_STOP THEN
+        CALL Quit
+    END IF
+END SUB
+
+' ---------------------------------------------------------------- properties
+
+SUB ShowProps
+    IF NOT NeedSel() THEN
+        EXIT SUB
+    END IF
+    PCaption$ = Objs(Sel).Caption
+    PX = SceneX(Sel)
+    PY = SceneY(Sel)
+    PW = SceneW(Sel)
+    PH = SceneH(Sel)
+    PShade = Objs(Sel).Shade
+    InMain = FALSE
+    SHOW Props
+END SUB
+
+SUB ApplyProps
+    LOCAL K AS INTEGER
+    LOCAL MW AS INTEGER
+    LOCAL MH AS INTEGER
+    K = Objs(Sel).Kind
+    IF INSTR(PCaption$, CHR$(34)) > 0 THEN
+        MESSAGE "A caption may not hold a double quote"
+        EXIT SUB
+    END IF
+    IF K = KICON THEN
+        IF PShade < 1 OR PShade > 6 THEN
+            MESSAGE "An icon is number 1 to 6"
+            EXIT SUB
+        END IF
+    END IF
+    IF PX + PW > CW OR PY + PH > CH THEN
+        MESSAGE "It must fit the page: X + width at most 544, Y + height at most 240"
+        EXIT SUB
+    END IF
+    MW = MinW(K)
+    MH = MinH(K)
+    IF PW < MW OR PH < MH THEN
+        MESSAGE "Too small: a label or button is at least 16 high, an icon 24 x 24"
+        EXIT SUB
+    END IF
+    Objs(Sel).Caption = PCaption$
+    Objs(Sel).Shade = PShade
+    CALL Place(Sel, PX, PY, PW, PH)  ' the page is redrawn whole on return
+    CALL AppChanged
+    CALL BackToMain
+END SUB
+
+' ---------------------------------------------------------------- files
+
+' Target$ = the name typed, with the extension of Kind (any other
+' replaced): DSN a design, PBI a picture, BAS a BASIC export.
+CONST DSN = 1
+CONST PBI = 2
+CONST BAS = 3
+FUNCTION TargetOk(Kind AS INTEGER) AS BOOLEAN
+    LOCAL R AS INTEGER
+    SafeOut$ = FileName$
+    SELECT CASE Kind
+    CASE DSN
+        R = SafeName(".DSN")
+    CASE PBI
+        R = SafeName(".PBI")
+    CASE ELSE
+        R = SafeName(".BAS")
+    END SELECT
+    SELECT CASE R
+    CASE 1
+        MESSAGE "Type a file name"
+        RETURN FALSE
+    CASE 2
+        MESSAGE "A name has at most 8 characters before the dot"
+        RETURN FALSE
+    END SELECT
+    IF LEFT$(SafeOut$, 8) = "DSGNTMP." THEN
+        CALL AppFail(SafeOut$, 247)  ' DESIGNER's own temporary name
+        RETURN FALSE
+    END IF
+    Target$ = SafeOut$
+    RETURN TRUE
+END FUNCTION
+
+' The export written to SafeTemp$ takes Target$'s place; then the status.
+SUB Exported
+    LOCAL K AS INTEGER
+    SafeOut$ = Target$
+    K = SafeReplace()
+    IF K <> 0 THEN
+        CALL AppFail("Not exported", K)
+    ELSE
+        CALL AppSay("Exported " + Target$)
+    END IF
+END SUB
+
+FUNCTION SaveTo() AS BOOLEAN
+    LOCAL I AS INTEGER
+    DiskN = 1
+    Disk(1).Kind = 0
+    Disk(1).X = VERSION
+    Disk(1).Y = 0
+    Disk(1).W = CW
+    Disk(1).H = CH
+    Disk(1).Shade = 0
+    Disk(1).Caption = MAGIC$
+    FOR I = 1 TO SceneN
+        DiskN = I + 1
+        Disk(DiskN) = Objs(SceneOrder(I))
+        Disk(DiskN).X = SceneX(SceneOrder(I))
+        Disk(DiskN).Y = SceneY(SceneOrder(I))
+        Disk(DiskN).W = SceneW(SceneOrder(I))
+        Disk(DiskN).H = SceneH(SceneOrder(I))
+    NEXT I
+    DB SAVE Disk, DiskN, Target$
+    IF IOERR <> 0 THEN
+        CALL AppFail("Not saved", IOERR)
+        RETURN FALSE
+    END IF
+    DocName$ = Target$
+    CALL AppSaved
+    CALL Show
+    RETURN TRUE
+END FUNCTION
+
+FUNCTION AppSave() AS BOOLEAN
+    IF LEN(DocName$) = 0 THEN
+        CALL ShowFiles
+        RETURN FALSE
+    END IF
+    Target$ = DocName$
+    RETURN SaveTo()
+END FUNCTION
+
+SUB SaveDesign
+    LOCAL Done AS BOOLEAN
+    Done = AppSave()
+END SUB
+
+SUB SaveAs
+    LOCAL Done AS BOOLEAN
+    IF NOT TargetOk(DSN) THEN
+        EXIT SUB
+    END IF
+    Done = SaveTo()
+    IF Done THEN
+        CALL BackToMain
+    END IF
+END SUB
+
+' Why record R of Disk is not a valid object ("" when it is).
+FUNCTION Wrong$(R AS INTEGER) AS STRING
+    LOCAL K AS INTEGER
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL W AS INTEGER
+    LOCAL H AS INTEGER
+    K = Disk(R).Kind
+    X = Disk(R).X
+    Y = Disk(R).Y
+    W = Disk(R).W
+    H = Disk(R).H
+    IF K < KBOX OR K > KICON THEN
+        RETURN "an unknown kind " + STR$(K)
+    END IF
+    IF W < MinW(K) THEN
+        RETURN "too small"
+    END IF
+    IF H < MinH(K) THEN
+        RETURN "too small"
+    END IF
+    IF X < 0 OR Y < 0 OR X > CW - W OR Y > CH - H THEN
+        RETURN "off the page"
+    END IF
+    IF K = KICON THEN
+        IF W <> 24 OR H <> 24 OR Disk(R).Shade < 1 OR Disk(R).Shade > 6 THEN
+            RETURN "not an icon 1 to 6 of 24 x 24"
+        END IF
+    ELSE
+        IF Disk(R).Shade < 0 OR Disk(R).Shade > 8 THEN
+            RETURN "a shade outside 0 to 8"
+        END IF
+    END IF
+    IF INSTR(Disk(R).Caption, CHR$(34)) > 0 THEN
+        RETURN "a double quote in its caption"
+    END IF
+    RETURN ""
+END FUNCTION
+
+' Why Disk is not a design this program can open ("" when it is).
+FUNCTION Invalid$() AS STRING
+    LOCAL R AS INTEGER
+    LOCAL Why$ AS STRING
+    IF DiskN < 1 THEN
+        RETURN "empty"
+    END IF
+    IF Disk(1).Kind <> 0 OR Disk(1).Caption <> MAGIC$ THEN
+        RETURN "not a design"
+    END IF
+    IF Disk(1).X <> VERSION THEN
+        RETURN "scene version " + STR$(Disk(1).X) + ", this program reads " + STR$(VERSION)
+    END IF
+    IF Disk(1).W <> CW OR Disk(1).H <> CH THEN
+        RETURN "another page size"
+    END IF
+    IF DiskN - 1 > MAXOBJ THEN
+        RETURN "more than " + STR$(MAXOBJ) + " objects"
+    END IF
+    FOR R = 2 TO DiskN
+        Why$ = Wrong$(R)
+        IF LEN(Why$) > 0 THEN
+            RETURN "object " + STR$(R - 1) + " is " + Why$
+        END IF
+    NEXT R
+    RETURN ""
+END FUNCTION
+
+' Disk (checked) becomes the design.
+SUB TakeDisk
+    LOCAL R AS INTEGER
+    LOCAL Ok AS BOOLEAN
+    LOCAL K AS INTEGER
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL W AS INTEGER
+    LOCAL H AS INTEGER
+    CALL ClearDesign
+    FOR R = 2 TO DiskN
+        K = Disk(R).Kind
+        X = Disk(R).X
+        Y = Disk(R).Y
+        W = Disk(R).W
+        H = Disk(R).H
+        T$ = Disk(R).Caption
+        Ok = NewObj(K, X, Y, W, H, Disk(R).Shade, T$)
+    NEXT R
+END SUB
+
+SUB ClearDesign
+    SceneN = 0
+    ObjN = 0
+    Sel = 0
+    CALL HandlesForget
+END SUB
+
+SUB OpenDesign
+    LOCAL Why$ AS STRING
+    IF NOT TargetOk(DSN) THEN
+        EXIT SUB
+    END IF
+    IF NOT AppMayClose() THEN
+        EXIT SUB
+    END IF
+    DB LOAD Disk, DiskN, Target$
+    IF IOERR <> 0 THEN
+        CALL AppFail("Not opened", IOERR)
+        EXIT SUB
+    END IF
+    Why$ = Invalid$()
+    IF LEN(Why$) > 0 THEN
+        MESSAGE "Not opened: " + Why$
+        EXIT SUB
+    END IF
+    CALL TakeDisk
+    DocName$ = Target$
+    CALL AppSaved
+    IF DBRECOVERED <> 0 THEN
+        MESSAGE "Opened from the copy kept by the last save: save it again"
+        CALL AppChanged
+    END IF
+    CALL BackToMain
+    CALL Show  ' M13 corrective: the status named the design shown before
+END SUB
+
+SUB NewDesign
+    IF NOT AppMayClose() THEN
+        EXIT SUB
+    END IF
+    CALL ClearDesign
+    DocName$ = ""
+    CALL AppSaved
+    CALL Repaint
+END SUB
+
+SUB Repaint
+    IF Visible() THEN
+        CALL Paint
+    END IF
+    CALL Show
+END SUB
+
+' Export picture: the page, without handles, as a PBI1 file.
+SUB ExportPicture
+    IF NOT TargetOk(PBI) THEN
+        EXIT SUB
+    END IF
+    CALL BackToMain
+    Shoot = TRUE  ' the Paint handler captures the page once it is drawn
+END SUB
+
+SUB SavePicture
+    Shoot = FALSE
+    BITMAP GET Shot, 0, 0, CW, CH
+    SafeTemp$ = "DSGNTMP.PBI"
+    BITMAP SAVE Shot, SafeTemp$
+    IF IOERR <> 0 THEN
+        CALL AppFail("Not exported", IOERR)
+    ELSE
+        CALL Exported
+    END IF
+END SUB
+
+' A line of the BASIC export; after a failure nothing more is written.
+SUB Out(L$ AS STRING)
+    IF IOERR = 0 THEN
+        PRINT #1, L$
+    END IF
+END SUB
+
+' "    DRAW BOX A, B, C, D", or, when E (a shade) is 0 or more,
+' "    DRAW FILL A, B, C, D, E".
+SUB Emit(A AS INTEGER, B AS INTEGER, C AS INTEGER, D AS INTEGER, E AS INTEGER)
+    T$ = "    DRAW BOX "
+    IF E >= 0 THEN
+        T$ = "    DRAW FILL "
+    END IF
+    T$ = T$ + STR$(A) + ", " + STR$(B) + ", " + STR$(C) + ", " + STR$(D)
+    IF E >= 0 THEN
+        T$ = T$ + ", " + STR$(E)
+    END IF
+    CALL Out(T$)
+END SUB
+
+' Export BASIC: SUB DrawDesign, the same drawing as statements.
+SUB ExportBasic
+    LOCAL K AS INTEGER
+    LOCAL I AS INTEGER
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL W AS INTEGER
+    LOCAL H AS INTEGER
+    IF NOT TargetOk(BAS) THEN
+        EXIT SUB
+    END IF
+    SafeTemp$ = "DSGNTMP.BAS"
+    OPEN SafeTemp$ FOR OUTPUT AS #1
+    IF IOERR <> 0 THEN
+        CALL AppFail("Not exported", IOERR)
+        EXIT SUB
+    END IF
+    CALL Out("' " + Target$ + ": drawn by DESIGNER, " + STR$(SceneN) + " objects")
+    CALL Out("' INCLUDE it; CALL DrawDesign in a PAINT handler.")
+    CALL Out("' Icons: DIM Icons AS BITMAP * 24, 144 (P2ICONS.PBI)")
+    CALL Out("SUB DrawDesign")
+    FOR K = 1 TO SceneN
+        I = SceneOrder(K)
+        X = SceneX(I)
+        Y = SceneY(I)
+        W = SceneW(I)
+        H = SceneH(I)
+        SELECT CASE Objs(I).Kind
+        CASE KBOX
+            CALL Emit(X, Y, W, H, -1)
+        CASE KPANEL
+            CALL Emit(X, Y, W, H, Objs(I).Shade)
+            CALL Emit(X, Y, W, H, -1)
+        CASE KBUTTON
+            CALL Emit(X, Y, W, H, 8)
+            CALL Emit(X, Y, W, H, -1)
+            IF W > 6 AND H > 6 THEN
+                CALL Emit(X + 2, Y + 2, W - 4, H - 4, -1)
+            END IF
+        CASE KICON
+            CALL Out("    BITMAP PUT Icons, " + STR$(X) + ", " + STR$(Y) + ", 0, " + STR$((Objs(I).Shade - 1) * 24) + ", 24, 24")
+        END SELECT
+        IF Objs(I).Kind = KLABEL OR Objs(I).Kind = KBUTTON THEN
+            CALL TextLine(I)
+        END IF
+    NEXT K
+    CALL Out("END SUB")
+    K = IOERR
+    CLOSE #1
+    IF K = 0 THEN
+        K = IOERR
+    END IF
+    IF K <> 0 THEN
+        CALL AppFail("Not exported", K)
+        EXIT SUB
+    END IF
+    CALL Exported
+    CALL BackToMain
+END SUB
+
+' The DRAW TEXT line of object I, placed as DrawCaption places it.
+SUB TextLine(I AS INTEGER)
+    LOCAL X AS INTEGER
+    LOCAL W AS INTEGER
+    LOCAL H AS INTEGER
+    X = SceneX(I)
+    W = SceneW(I)
+    H = SceneH(I)
+    IF H < 16 OR W < 8 THEN
+        EXIT SUB
+    END IF
+    T$ = Objs(I).Caption
+    CALL Fit(W - 6)
+    IF LEN(T$) = 0 THEN
+        EXIT SUB
+    END IF
+    IF Objs(I).Kind = KBUTTON THEN
+        X = X + (W - TEXTWIDTH(T$)) / 2
+    ELSE
+        X = X + 3
+    END IF
+    CALL Out("    DRAW TEXT " + STR$(X) + ", " + STR$(SceneY(I) + (H - 16) / 2) + ", " + CHR$(34) + T$ + CHR$(34))
+END SUB
+
+' Print: the design on an A4 page, 9/10 of its size (a pixel is 0.9 point),
+' outlines and text; a panel of shade 0 prints black, other shades as
+' outlines (the printer has no grey patterns, LANGUAGE-SPEC §5.13).
+SUB PrintDesign
+    LOCAL K AS INTEGER
+    LOCAL I AS INTEGER
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL W AS INTEGER
+    LOCAL H AS INTEGER
+    PAGE NEW
+    IF IOERR <> 0 THEN
+        MESSAGE "Not printed: " + STR$(IOERR)
+        EXIT SUB
+    END IF
+    PAGE FONT 10
+    PAGE TEXT 0, 0, "DESIGNER: " + DocName$
+    PAGE BOX 0, 20, CW * 9 / 10, CH * 9 / 10
+    FOR K = 1 TO SceneN
+        I = SceneOrder(K)
+        X = SceneX(I) * 9 / 10
+        Y = 20 + SceneY(I) * 9 / 10
+        W = MAX(SceneW(I) * 9 / 10, 1)
+        H = MAX(SceneH(I) * 9 / 10, 1)
+        IF Objs(I).Kind = KPANEL AND Objs(I).Shade = 0 THEN
+            PAGE FILL X, Y, W, H
+        ELSE
+            IF Objs(I).Kind <> KLABEL THEN
+                PAGE BOX X, Y, W, H
+            END IF
+        END IF
+        IF Objs(I).Kind = KLABEL OR Objs(I).Kind = KBUTTON THEN
+            IF H >= 12 THEN
+                T$ = Objs(I).Caption
+                WHILE LEN(T$) > 0 AND PAGEWIDTH(T$) > W - 4
+                    T$ = LEFT$(T$, LEN(T$) - 1)
+                WEND
+                IF LEN(T$) > 0 THEN
+                    PAGE TEXT X + 2, Y + (H - 12) / 2, T$
+                END IF
+            END IF
+        END IF
+    NEXT K
+    PAGE PRINT
+    IF IOERR <> 0 THEN
+        MESSAGE "Not printed: " + STR$(IOERR)
+    ELSE
+        CALL AppSay("Printed")
+    END IF
+END SUB
+
+' A sample design: a small dialog box.
+SUB Sample
+    LOCAL Ok AS BOOLEAN
+    IF NOT InMain THEN
+        CALL BackToMain
+        EXIT SUB
+    END IF
+    IF NOT AppMayClose() THEN
+        EXIT SUB
+    END IF
+    CALL ClearDesign
+    Ok = NewObj(KPANEL, 120, 30, 300, 180, 7, "")
+    Ok = NewObj(KPANEL, 120, 30, 300, 24, 3, "")
+    Ok = NewObj(KLABEL, 130, 34, 200, 16, 0, "Print the report")
+    Ok = NewObj(KICON, 136, 70, 24, 24, 4, "")
+    Ok = NewObj(KLABEL, 170, 74, 230, 16, 0, "Pages: all, from the first")
+    Ok = NewObj(KBOX, 136, 110, 268, 48, 0, "")
+    Ok = NewObj(KLABEL, 144, 124, 250, 16, 0, "Printer: as in Setup")
+    Ok = NewObj(KBUTTON, 220, 172, 84, 26, 0, "Print")
+    Ok = NewObj(KBUTTON, 316, 172, 84, 26, 0, "Cancel")
+    DocName$ = "SAMPLE.DSN"
+    CALL AppChanged
+    CALL Repaint
+END SUB
+
+SUB ShowFiles
+    FileName$ = ""
+    SafeOut$ = DocName$
+    IF SafeName("") = 0 THEN
+        FileName$ = SafeOut$  ' the design's name, without its .DSN
+    END IF
+    InMain = FALSE
+    SHOW Files
+END SUB
+
+SUB BackToMain
+    SHOW Main
+    InMain = TRUE
+END SUB
+
+SUB Quit
+    IF AppMayClose() THEN
+        EXIT
+    END IF
+END SUB
+
+' ---------------------------------------------------------------- start
+
+DragW = CW
+DragH = CH
+HandleCW = CW
+HandleCH = CH
+InMain = TRUE
+BITMAP LOAD Icons, "P2ICONS.PBI"
+IconsOk = IOERR = 0
+IF IconsOk THEN
+    IconsOk = BITMAPW(Icons) = 24 AND BITMAPH(Icons) = 144
+END IF
+CALL Show
+END

@@ -1,0 +1,43 @@
+' Word Sort (M5b example): split a comma-separated line with INSTR, sort
+' the three words with string ordering, then keep the sorted line in a
+' disposable file and read it back.
+DIM Line$ AS STRING
+DIM W1$ AS STRING
+DIM W2$ AS STRING
+DIM W3$ AS STRING
+DIM T$ AS STRING
+DIM P AS INTEGER
+DIM Q AS INTEGER
+Line$ = "pear,apple,fig"
+P = INSTR(Line$, ",")
+Q = INSTR(P + 1, Line$, ",")
+W1$ = LEFT$(Line$, P - 1)
+W2$ = MID$(Line$, P + 1, Q - P - 1)
+W3$ = MID$(Line$, Q + 1, LEN(Line$) - Q)
+MESSAGE "Commas at " + STR$(P) + " and " + STR$(Q)
+MESSAGE "Fields: " + W1$ + " " + W2$
+MESSAGE "and " + W3$
+IF W1$ > W2$ THEN
+    T$ = W1$
+    W1$ = W2$
+    W2$ = T$
+END IF
+IF W2$ > W3$ THEN
+    T$ = W2$
+    W2$ = W3$
+    W3$ = T$
+END IF
+IF W1$ > W2$ THEN
+    T$ = W1$
+    W1$ = W2$
+    W2$ = T$
+END IF
+Line$ = W1$ + "," + W2$ + "," + W3$
+FILESAVE "PBSORT.TXT", Line$
+Line$ = ""
+FILELOAD "PBSORT.TXT", Line$
+MESSAGE "Sorted: " + Line$
+IF INSTR(Line$, "grape") = 0 THEN
+    MESSAGE "No grape in " + STR$(LEN(Line$)) + " characters"
+END IF
+END

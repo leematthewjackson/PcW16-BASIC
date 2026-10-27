@@ -1,0 +1,121 @@
+' M14PRB (M14): the M14 runtime corrections, one button each, for the owner's
+' XAnne retest (docs/M14-ACCEPTANCE.md, session F). Every file it writes is
+' named M14*.* in the program's folder: run it in a disposable folder.
+'   python3 tools/build.py xanne/m14prb.pbas --runtime-banks all
+' 1 Companion: a design M14F.DSN, then a picture M14F.PBI of the same name:
+'   the picture's save must be refused (253); the design's backup, kept,
+'   is then loaded with the design deleted.
+' 2 Backup: a picture saved, its file deleted, saved again: M14B.BAK kept
+'   (renamed to M14BK.PBI and loaded to show it).
+' 3 Type: M14T.PDB of another TYPE, an older M14T.BAK of this one (saved as
+'   M14U.PDB and renamed): DB LOAD must report 249 and load nothing.
+' 4 Field: M14S.PDB (copied from artifacts/m14) has a field without its 0:
+'   DB LOAD must report 251.
+' 5 Round: 240 + (-2.8759247157950085238553584E-5), correctly rounded.
+TYPE Item
+    Id AS INTEGER
+    Name AS STRING * 10
+END TYPE
+TYPE Other
+    Id AS INTEGER
+    Size AS INTEGER
+    Name AS STRING * 8
+END TYPE
+DIM A(4) AS Item BANKED
+DIM O(4) AS Other BANKED
+DIM N AS INTEGER
+DIM K AS INTEGER
+DIM P AS BITMAP * 16, 16
+DIM X AS REAL
+DIM Y AS REAL
+DIM R$ AS STRING * 120
+
+WINDOW Main, "M14PRB"
+LABEL "M14 runtime corrections"
+LABEL "Press 1 to 5 in turn"
+BUTTON "1 Companion", Companion
+BUTTON "2 Backup", Backup
+BUTTON "3 Type", OtherType
+BUTTON "4 Field", Field
+BUTTON "5 Round", Round
+BUTTON "Quit", Quit
+
+SUB Companion
+    KILL "M14F.DSN"
+    KILL "M14F.PBI"
+    KILL "M14F.NEW"
+    KILL "M14F.BAK"
+    N = 0
+    DB NEW A, N
+    A(N).Name = "Design"
+    DB SAVE A, N, "M14F.DSN"
+    R$ = "1 design " + STR$(IOERR)
+    DB SAVE A, N, "M14F.DSN"
+    R$ = R$ + ", again " + STR$(IOERR)
+    BITMAP SAVE P, "M14F.PBI"
+    R$ = R$ + ", picture " + STR$(IOERR) + " (want 0, 0, 253)"
+    KILL "M14F.DSN"
+    N = 0
+    DB LOAD A, N, "M14F.DSN"
+    R$ = R$ + "; from BAK " + STR$(IOERR) + " " + STR$(N) + " " + STR$(DBRECOVERED) + " (want 0 1 2)"
+    MESSAGE R$
+END SUB
+
+SUB Backup
+    KILL "M14B.PBI"
+    KILL "M14B.BAK"
+    KILL "M14B.NEW"
+    BITMAP SAVE P, "M14B.PBI"
+    BITMAP SAVE P, "M14B.PBI"
+    R$ = "2 saves " + STR$(IOERR)
+    KILL "M14B.PBI"
+    BITMAP SAVE P, "M14B.PBI"
+    R$ = R$ + ", after KILL " + STR$(IOERR)
+    KILL "M14BK.PBI"
+    NAME "M14B.BAK" AS "M14BK.PBI"
+    BITMAP LOAD P, "M14BK.PBI"
+    R$ = R$ + ", BAK kept " + STR$(IOERR) + " (want 0, 0, 0)"
+    MESSAGE R$
+END SUB
+
+SUB OtherType
+    KILL "M14T.PDB"
+    KILL "M14T.BAK"
+    KILL "M14U.PDB"
+    N = 0
+    DB NEW O, N
+    DB SAVE O, N, "M14T.PDB"
+    R$ = "3 saves " + STR$(IOERR)
+    N = 0
+    DB NEW A, N
+    A(N).Name = "Older"
+    DB SAVE A, N, "M14U.PDB"
+    NAME "M14U.PDB" AS "M14T.BAK"
+    R$ = R$ + " " + STR$(IOERR)
+    N = 5
+    DB LOAD A, N, "M14T.PDB"
+    R$ = R$ + ", load " + STR$(IOERR) + " " + STR$(N) + " " + STR$(DBRECOVERED) + " (want 0 0, 249 0 0)"
+    MESSAGE R$
+END SUB
+
+SUB Field
+    N = 5
+    DB LOAD A, N, "M14S.PDB"
+    MESSAGE "4 load " + STR$(IOERR) + " " + STR$(N) + " (want 251 0)"
+END SUB
+
+SUB Round
+    X = 240
+    Y = -2.8759247157950085238553584E-5
+    X = X + Y
+    IF X = 2.3999997121095657348632812E+2 THEN
+        MESSAGE "5 correctly rounded"
+    ELSE
+        MESSAGE "5 WRONG: " + STR$(X)
+    END IF
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+END

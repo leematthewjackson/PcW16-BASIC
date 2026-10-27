@@ -1,0 +1,56 @@
+' M5d recovery XAnne check (G1): a changing label shows at most 24
+' printable characters. "1 Next char" (also Return) shows the next
+' printable character 24 times, from space (32) to ~ (126), so every
+' character's width can be seen against the window edge. "2 Widest" shows
+' 24 W's, "3 Short" shows ok, "4 Empty" clears the line: long, short and
+' empty can be repeated in any order. "5 Too long" (25 characters) and
+' "6 Bad char" (character 200) end the program with an error each.
+DIM Shown$ AS STRING
+DIM Last$ AS STRING
+DIM Code AS INTEGER
+DIM I AS INTEGER
+Code = 31
+Shown$ = "Ready"
+Last$ = "Press 1 or Return"
+WINDOW "Label check"
+LABEL "Changing lines: 24 max"
+LABEL Shown$
+LABEL Last$
+BUTTON "1 Next char", NextChar, DEFAULT
+BUTTON "2 Widest", Widest
+BUTTON "3 Short", Short
+BUTTON "4 Empty", Empty
+BUTTON "5 Too long", TooLong
+BUTTON "6 Bad char", BadChar
+SUB NextChar
+    Code = Code + 1
+    IF Code > 126 THEN
+        Code = 32
+    END IF
+    Shown$ = ""
+    FOR I = 1 TO 24
+        Shown$ = Shown$ + CHR$(Code)
+    NEXT I
+    Last$ = "Char " + STR$(Code) + " x 24"
+END SUB
+SUB Widest
+    Shown$ = "WWWWWWWWWWWWWWWWWWWWWWWW"
+    Last$ = "24 W's"
+END SUB
+SUB Short
+    Shown$ = "ok"
+    Last$ = "Short"
+END SUB
+SUB Empty
+    Shown$ = ""
+    Last$ = "Empty line above"
+END SUB
+SUB TooLong
+    Shown$ = "WWWWWWWWWWWWWWWWWWWWWWWWW"
+    Last$ = "25 W's"
+END SUB
+SUB BadChar
+    Shown$ = "Bad " + CHR$(200)
+    Last$ = "Char 200"
+END SUB
+END

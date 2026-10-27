@@ -1,0 +1,383 @@
+' SPRPROBE (M13 Stage D/E): the XAnne evidence for sprites, ticks and held
+' keys (docs/M13-SPRITES.md, LANGUAGE-SPEC §5.14, §5.15). Which mask
+' colour draws, the key codes and the tick are known only from ROSAN283
+' and a static reading of PCW045.SYS. The program checks what it can by
+' itself (POINT) and shows the rest for the owner to read off.
+'   Mask   M1 BITMAP MASK of a test card through a half-white, half-black
+'          mask over a striped backdrop; M2 a part of the card drawn at an
+'          odd x; M3 a masked part at an odd x from inside the card. Each
+'          is compared pixel by pixel with what it should be: "0 wrong".
+'   Keys   while on, the codes of the keys held down now (KEYDOWN 0..127),
+'          up to 8 at once. Hold Left, Right, Up, Down, Space, A, then Left
+'          and Space together; note the numbers shown. (M13 corrective: the
+'          owner's first run showed Left 99, Right 100, Up 101, Down 98, the
+'          numbers lib/keys.pbas now gives; the wanted line was 107, 116,
+'          117, 114, the keypad's, from a misreading of Rosanne's table.)
+'   Ticks  T1 timer ticks counted for 10 seconds of the clock (EVERY 1
+'          TICKS: 160 wanted); T2 the same while every tick draws a
+'          moving sprite four times (the "load"): how many ticks arrive
+'          and how many draws were done. Watch the sprite: no trail.
+'   Speed  S1..S4 one draw of each kind, timed by the clock.
+' It writes no files. Build twice, with and without the runtime bank:
+'   python3 tools/build.py xanne/sprprb.pbas --runtime-banks all
+'   python3 tools/build.py xanne/sprprb.pbas --prg build/sprprn.prg
+CONST CW = 48
+CONST CH = 32
+DIM Card AS BITMAP * 48, 32
+DIM Msk AS BITMAP * 48, 32
+DIM Bk AS BITMAP * 48, 32
+DIM Hero AS BITMAP * 16, 48
+DIM HeroM AS BITMAP * 16, 48
+DIM Back AS BITMAP * 200, 40
+DIM Info$ AS STRING * 24
+DIM R$(6) AS STRING * 60
+DIM Mode AS INTEGER
+DIM Ticks AS INTEGER
+DIM Draws AS INTEGER
+DIM S0 AS INTEGER
+DIM Last$ AS STRING * 60
+DIM HX AS INTEGER
+DIM HF AS INTEGER
+DIM Wrong AS INTEGER
+DIM WX AS INTEGER
+DIM WY AS INTEGER
+DIM K AS INTEGER
+
+WINDOW Main, "SPRPROBE", LARGE
+LABEL Info$
+CANVAS 560, 200, PAINT Paint
+BUTTON "Mask", ShowMask
+BUTTON "Keys", ShowKeys
+BUTTON "Ticks", ShowTicks
+BUTTON "Speed", RunSpeed
+BUTTON "Quit", Quit
+TIMER Tick, EVERY 1 TICKS
+
+' The card at 0, 0 (CW x CH): a frame, a black square with a white pixel,
+' single pixels, a diagonal, grey bars and an arrow pointing right.
+SUB DrawCard
+    LOCAL I AS INTEGER
+    DRAW FILL 0, 0, CW, CH, 8
+    DRAW BOX 0, 0, CW, CH
+    DRAW FILL 3, 3, 9, 9
+    DRAW INK WHITE
+    DRAW PIXEL 7, 7
+    DRAW INK BLACK
+    DRAW PIXEL 15, 3
+    DRAW PIXEL 16, 4
+    DRAW LINE 0, 31, 31, 0
+    FOR I = 0 TO 5
+        DRAW FILL 20 + I * 4, 14, 3, 8, I + 1
+    NEXT I
+    DRAW LINE 30, 26, 44, 26
+    DRAW LINE 44, 26, 40, 22
+    DRAW LINE 44, 26, 40, 30
+END SUB
+
+' The mask at 0, 40: white (drawn) on the left half, black (transparent)
+' on the right, with a black 2 x 2 hole on the left and a white 2 x 2
+' dot on the right.
+SUB DrawMask
+    DRAW FILL 0, 40, CW, CH, 8
+    DRAW FILL 24, 40, 24, CH, 0
+    DRAW FILL 5, 45, 2, 2, 0
+    DRAW FILL 30, 50, 2, 2, 8
+END SUB
+
+' A striped backdrop over X, Y, W, H.
+SUB Stripes(X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    LOCAL I AS INTEGER
+    DRAW FILL X, Y, W, H, 8
+    FOR I = 0 TO W - 1 STEP 3
+        DRAW LINE X + I, Y, X + I, Y + H - 1
+    NEXT I
+END SUB
+
+' A little figure, frame F (0 or 1) at X, Y on the canvas; its mask
+' (white where drawn) at X + 20, Y.
+SUB DrawFigure(X AS INTEGER, Y AS INTEGER, F AS INTEGER)
+    DRAW FILL X, Y, 16, 24, 8
+    DRAW FILL X + 20, Y, 16, 24, 0
+    DRAW INK WHITE
+    DRAW FILL X + 24, Y, 8, 8, 8
+    DRAW FILL X + 22, Y + 8, 12, 10, 8
+    DRAW INK BLACK
+    DRAW BOX X + 4, Y, 8, 8
+    DRAW FILL X + 2, Y + 8, 12, 10, 0
+    DRAW INK WHITE
+    DRAW PIXEL X + 6, Y + 3
+    DRAW PIXEL X + 9, Y + 3
+    DRAW INK BLACK
+    IF F = 0 THEN
+        DRAW LINE X + 4, Y + 18, X + 2, Y + 23
+        DRAW LINE X + 11, Y + 18, X + 13, Y + 23
+        DRAW INK WHITE
+        DRAW LINE X + 24, Y + 18, X + 22, Y + 23
+        DRAW LINE X + 31, Y + 18, X + 33, Y + 23
+    ELSE
+        DRAW LINE X + 6, Y + 18, X + 6, Y + 23
+        DRAW LINE X + 9, Y + 18, X + 9, Y + 23
+        DRAW INK WHITE
+        DRAW LINE X + 26, Y + 18, X + 26, Y + 23
+        DRAW LINE X + 29, Y + 18, X + 29, Y + 23
+    END IF
+    DRAW INK BLACK
+END SUB
+
+' Hero and HeroM: two frames of 16 x 24, one under the other.
+SUB MakeHero
+    DRAW CLEAR
+    CALL DrawFigure(0, 0, 0)
+    CALL DrawFigure(0, 24, 1)
+    BITMAP GET Hero, 0, 0, 16, 48
+    BITMAP GET HeroM, 20, 0, 16, 48
+END SUB
+
+SUB Results
+    LOCAL I AS INTEGER
+    DRAW FILL 0, 84, 560, 116, 8
+    FOR I = 1 TO 6
+        DRAW TEXT 4, 84 + (I - 1) * 18, R$(I)
+    NEXT I
+END SUB
+
+SUB Clear
+    LOCAL I AS INTEGER
+    FOR I = 1 TO 6
+        R$(I) = ""
+    NEXT I
+END SUB
+
+SUB Paint
+    DRAW CLEAR
+    CALL Results
+END SUB
+
+' Compare the W x H rectangle at DX, DY with what it should be: the card
+' at CX, CY where the mask at MX, MY is white (MX < 0: everywhere), else
+' the backdrop copy at BX, BY. Wrong counts the differences, WX, WY the
+' first one (relative).
+SUB Compare(DX AS INTEGER, DY AS INTEGER, W AS INTEGER, H AS INTEGER, CX AS INTEGER, CY AS INTEGER, MX AS INTEGER, MY AS INTEGER, BX AS INTEGER, BY AS INTEGER)
+    LOCAL I AS INTEGER
+    LOCAL J AS INTEGER
+    LOCAL Want AS INTEGER
+    Wrong = 0
+    WX = -1
+    WY = -1
+    FOR J = 0 TO H - 1
+        FOR I = 0 TO W - 1
+            Want = POINT(CX + I, CY + J)
+            IF MX >= 0 THEN
+                IF POINT(MX + I, MY + J) = 1 THEN
+                    Want = POINT(BX + I, BY + J)
+                END IF
+            END IF
+            IF POINT(DX + I, DY + J) <> Want THEN
+                IF Wrong = 0 THEN
+                    WX = I
+                    WY = J
+                END IF
+                Wrong = Wrong + 1
+            END IF
+        NEXT I
+    NEXT J
+END SUB
+
+FUNCTION Verdict$ AS STRING
+    IF Wrong = 0 THEN
+        RETURN "0 wrong"
+    END IF
+    RETURN STR$(Wrong) + " wrong, first at " + STR$(WX) + "," + STR$(WY)
+END FUNCTION
+
+SUB ShowMask
+    Mode = 0
+    CALL Clear
+    Info$ = "Mask: checking"
+    DRAW CLEAR
+    CALL DrawCard
+    CALL DrawMask
+    BITMAP GET Card, 0, 0, CW, CH
+    BITMAP GET Msk, 0, 40, CW, CH
+    ' M1: the whole card through the mask at 120, 0
+    CALL Stripes(120, 0, CW, CH)
+    BITMAP GET Bk, 120, 0, CW, CH
+    BITMAP PUT Bk, 120, 40
+    BITMAP MASK Card, Msk, 120, 0
+    CALL Compare(120, 0, CW, CH, 0, 0, 0, 40, 120, 40)
+    R$(1) = "M1 MASK at 120,0: " + Verdict$()
+    ' M2: the part 3, 5, 37 x 20 of the card at 201, 3
+    BITMAP PUT Card, 201, 3, 3, 5, 37, 20
+    CALL Compare(201, 3, 37, 20, 3, 5, -1, 0, 0, 0)
+    R$(2) = "M2 PUT part at 201,3: " + Verdict$()
+    ' M3: the masked part 5, 2, 35 x 25 at 281, 3
+    CALL Stripes(280, 0, CW, CH)
+    BITMAP GET Bk, 281, 3, 35, 25
+    BITMAP PUT Bk, 281, 40
+    BITMAP MASK Card, Msk, 281, 3, 5, 2, 35, 25
+    CALL Compare(281, 3, 35, 25, 5, 2, 5, 42, 281, 40)
+    R$(3) = "M3 MASK part at 281,3: " + Verdict$()
+    R$(4) = "Look: at 120,0 the card's left half, stripes on the right,"
+    R$(5) = "stripes in the left hole, a card dot on the right."
+    CALL Results
+    Info$ = "Mask: done"
+END SUB
+
+SUB ShowKeys
+    CALL Clear
+    DRAW CLEAR
+    IF Mode = 1 THEN
+        Mode = 0
+        Info$ = "Keys: off"
+        CALL Results
+        EXIT SUB
+    END IF
+    R$(1) = "K1 hold keys: their scan codes show below (Keys again: off)"
+    R$(2) = "want Left 99, Right 100, Up 101, Down 98, Space 41, A 28"
+    Last$ = "?"
+    Mode = 1
+    CALL Results
+    Info$ = "Keys: on"
+END SUB
+
+SUB KeyTick
+    LOCAL C AS INTEGER
+    LOCAL N AS INTEGER
+    LOCAL S$ AS STRING
+    S$ = "down:"
+    FOR C = 0 TO 127
+        IF KEYDOWN(C) THEN
+            N = N + 1
+            IF N <= 8 THEN
+                S$ = S$ + " " + STR$(C)
+            END IF
+        END IF
+    NEXT C
+    IF S$ <> Last$ THEN
+        Last$ = S$
+        R$(3) = S$
+        CALL Results
+    END IF
+END SUB
+
+' The seconds since S0 (the clock wraps at the hour).
+FUNCTION Elapsed AS INTEGER
+    RETURN (SECONDS - S0 + 3600) MOD 3600
+END FUNCTION
+
+SUB StartCount(M AS INTEGER)
+    S0 = SECONDS
+    WHILE SECONDS = S0
+    WEND
+    S0 = SECONDS
+    Ticks = 0
+    Draws = 0
+    Mode = M
+END SUB
+
+SUB ShowTicks
+    Mode = 0
+    CALL Clear
+    CALL MakeHero
+    DRAW CLEAR
+    CALL Stripes(0, 0, 200, 40)
+    BITMAP GET Back, 0, 0, 200, 40
+    R$(1) = "T1 counting ticks for 10 seconds (want 160)..."
+    CALL Results
+    Info$ = "Ticks: wait 20 seconds"
+    CALL StartCount(2)
+END SUB
+
+' Move the sprite one step: put the background back, draw the next frame.
+SUB HeroStep
+    BITMAP PUT Back, HX, 8, HX, 8, 16, 24
+    HX = HX + 3
+    IF HX > 180 THEN
+        HX = 1
+    END IF
+    HF = 1 - HF
+    BITMAP MASK Hero, HeroM, HX, 8, 0, HF * 24, 16, 24
+    Draws = Draws + 1
+END SUB
+
+SUB Tick
+    LOCAL I AS INTEGER
+    SELECT CASE Mode
+    CASE 1
+        CALL KeyTick
+    CASE 2
+        Ticks = Ticks + 1
+        IF Elapsed() >= 10 THEN
+            R$(1) = "T1 ticks in 10 s idle: " + STR$(Ticks) + " (want 160)"
+            R$(2) = "T2 counting ticks with 4 sprite moves a tick..."
+            CALL Results
+            CALL StartCount(3)
+        END IF
+    CASE 3
+        Ticks = Ticks + 1
+        FOR I = 1 TO 4
+            CALL HeroStep
+        NEXT I
+        IF Elapsed() >= 10 THEN
+            Mode = 0
+            R$(2) = "T2 ticks in 10 s, 4 moves a tick: " + STR$(Ticks) + ", moves " + STR$(Draws)
+            R$(3) = "(fewer than 160 ticks: missed ticks are dropped, not queued)"
+            R$(4) = "Look: the figure walked over the stripes with no trail."
+            CALL Results
+            Info$ = "Ticks: done"
+        END IF
+    END SELECT
+END SUB
+
+' How many of operation Op fit in Secs seconds of the clock.
+FUNCTION Measure(Op AS INTEGER, Secs AS INTEGER) AS INTEGER
+    LOCAL N AS INTEGER
+    CALL StartCount(0)
+    WHILE Elapsed() < Secs
+        SELECT CASE Op
+        CASE 1
+            BITMAP MASK Hero, HeroM, 41, 8, 0, 24, 16, 24
+        CASE 2
+            BITMAP MASK Card, Msk, 241, 4, 3, 2, 16, 24
+        CASE 3
+            BITMAP PUT Back, 41, 8, 41, 8, 16, 24
+        CASE 4
+            CALL HeroStep
+        END SELECT
+        N = N + 1
+    WEND
+    RETURN N
+END FUNCTION
+
+FUNCTION Ms$(N AS INTEGER, Secs AS INTEGER) AS STRING
+    IF N = 0 THEN
+        RETURN "over " + STR$(Secs) + " s"
+    END IF
+    RETURN STR$(Secs * 1000 / N) + " ms (" + STR$(N) + " in " + STR$(Secs) + " s)"
+END FUNCTION
+
+SUB RunSpeed
+    Mode = 0
+    CALL Clear
+    CALL MakeHero
+    DRAW CLEAR
+    CALL DrawCard
+    CALL DrawMask
+    BITMAP GET Card, 0, 0, CW, CH
+    BITMAP GET Msk, 0, 40, CW, CH
+    DRAW CLEAR
+    CALL Stripes(0, 0, 200, 40)
+    BITMAP GET Back, 0, 0, 200, 40
+    Info$ = "Speed: wait 12 seconds"
+    R$(1) = "S1 MASK 16x24 frame of a strip: " + Ms$(Measure(1, 3), 3)
+    R$(2) = "S2 MASK 16x24 part, repacked: " + Ms$(Measure(2, 3), 3)
+    R$(3) = "S3 PUT 16x24 part of a background: " + Ms$(Measure(3, 3), 3)
+    R$(4) = "S4 a sprite move (S3 + S1): " + Ms$(Measure(4, 3), 3)
+    CALL Results
+    Info$ = "Speed: done"
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+END

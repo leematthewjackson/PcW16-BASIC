@@ -1,0 +1,258 @@
+' PRINTDEMO (M12 Stage C): printing from PcW16 BASIC (LANGUAGE-SPEC §5.13).
+'
+' Letter   a page of text: a heading, your name and a paragraph wrapped to
+'          the page by PAGEWIDTH, signed off at the right margin.
+' Table    a ruled table of figures, the numbers right-aligned in their
+'          columns, with a total.
+' Chart    a bar chart of the same figures, with a scale and labels.
+' Each button prints one A4 page through Rosanne's print system and reports
+' what Rosanne answered. Nothing is written to disk.
+'
+' To get the page as a PDF on a PC with XAnne: docs/manual/15-printing.md
+' (printer set to a PCL printer printing to a file, then GhostPCL).
+' Build: python3 tools/build.py examples/printdemo.pbas (the accepted build added --runtime-banks all)
+INCLUDE "lib/app.pbas"
+
+CONST MARGIN = 36
+CONST WIDTH = 450
+
+DIM Who$ AS STRING * 30
+DIM Item$(6) AS STRING * 16
+DIM Amount(6) AS INTEGER
+DIM Line$ AS STRING * 126
+DIM Word$ AS STRING * 40
+DIM Para$ AS STRING * 120
+DIM Y AS INTEGER
+
+WINDOW Main, "PRINTDEMO"
+LABEL AppStatus$
+TEXTBOX Who$, "Your name"
+BUTTON "Letter", PrintLetter
+BUTTON "Table", PrintTable
+BUTTON "Chart", PrintChart
+BUTTON "Quit", Quit
+
+SUB Figures
+    Item$(1) = "Tea"
+    Amount(1) = 120
+    Item$(2) = "Coffee"
+    Amount(2) = 345
+    Item$(3) = "Biscuits"
+    Amount(3) = 78
+    Item$(4) = "Milk"
+    Amount(4) = 210
+    Item$(5) = "Sugar"
+    Amount(5) = 32
+    Item$(6) = "Fruit"
+    Amount(6) = 164
+END SUB
+
+' What Rosanne's answer means (PAGE PRINT and PAGE NEW, ROSAN283).
+FUNCTION Outcome$(Code AS INTEGER) AS STRING
+    SELECT CASE Code
+    CASE 0
+        RETURN "Printed"
+    CASE 1
+        RETURN "Not enough memory"
+    CASE 2
+        RETURN "Font not found"
+    CASE 3
+        RETURN "Too many fonts"
+    CASE 4
+        RETURN "Printing stopped"
+    CASE 5
+        RETURN "Printer in use"
+    CASE 6
+        RETURN "No valid printer set up"
+    CASE 7
+        RETURN "Not enough memory"
+    END SELECT
+    RETURN "Print error " + STR$(Code)
+END FUNCTION
+
+SUB Report
+    LOCAL E AS INTEGER
+    E = IOERR
+    CALL AppSay(Outcome$(E))
+    IF E <> 0 THEN
+        MESSAGE "Not printed: " + Outcome$(E) + " (code " + STR$(E) + ")"
+    END IF
+END SUB
+
+' Start a page; FALSE (after a message) if Rosanne refused.
+FUNCTION Begin() AS BOOLEAN
+    PAGE NEW
+    IF IOERR <> 0 THEN
+        CALL Report
+        RETURN FALSE
+    END IF
+    RETURN TRUE
+END FUNCTION
+
+' Print Line$ at Y and move down one 10-point line.
+SUB Emit
+    PAGE TEXT MARGIN, Y, Line$
+    Y = Y + 14
+END SUB
+
+' Word$ onto Line$ (or Line$ printed first if the word does not fit).
+SUB Flush
+    IF LEN(Word$) = 0 THEN
+        EXIT SUB
+    END IF
+    IF LEN(Line$) = 0 THEN
+        Line$ = Word$
+    ELSE
+        IF LEN(Line$) + LEN(Word$) < 126 AND PAGEWIDTH(Line$) + PAGEWIDTH(" " + Word$) <= WIDTH THEN
+            Line$ = Line$ + " " + Word$
+        ELSE
+            CALL Emit
+            Line$ = Word$
+        END IF
+    END IF
+    Word$ = ""
+END SUB
+
+' The words of Para$ added to the paragraph being printed, wrapped to
+' WIDTH points: whole words, as many as fit a line (a word longer than 40
+' characters is broken after its 40th). EndPara prints its last line.
+SUB Words
+    LOCAL I AS INTEGER
+    LOCAL C$ AS STRING
+    FOR I = 1 TO LEN(Para$) + 1
+        IF I > LEN(Para$) THEN
+            C$ = " "
+        ELSE
+            C$ = MID$(Para$, I, 1)
+        END IF
+        IF C$ = " " THEN
+            CALL Flush
+        ELSE
+            IF LEN(Word$) = 40 THEN
+                CALL Flush
+            END IF
+            Word$ = Word$ + C$
+        END IF
+    NEXT I
+END SUB
+
+SUB EndPara
+    IF LEN(Line$) > 0 THEN
+        CALL Emit
+    END IF
+    Line$ = ""
+    Y = Y + 8
+END SUB
+
+SUB PrintLetter
+    LOCAL Name$ AS STRING
+    IF NOT Begin() THEN
+        EXIT SUB
+    END IF
+    Name$ = Who$
+    IF LEN(Name$) = 0 THEN
+        Name$ = "a PcW16 owner"
+    END IF
+    PAGE FONT 18, BOLD
+    PAGE TEXT MARGIN, 20, "Printed from PcW16 BASIC"
+    PAGE LINE MARGIN, 46, MARGIN + WIDTH, 46
+    PAGE FONT 10
+    Y = 64
+    Line$ = ""
+    Para$ = "This page was written by a BASIC program for " + Name$ + "."
+    CALL Words
+    CALL EndPara
+    Para$ = "The text is set in Rosanne's own typeface and wrapped to the width of the page one word at a time:"
+    CALL Words
+    Para$ = "PAGEWIDTH measures each line in points before it is printed, so no line runs past the right margin and none is cut."
+    CALL Words
+    CALL EndPara
+    Para$ = "Lines, boxes and filled rectangles can be printed too, which is how the Table and Chart buttons draw their pages."
+    CALL Words
+    CALL EndPara
+    PAGE FONT 10, BOLD
+    Line$ = "PcW16 BASIC, M12"
+    PAGE TEXT MARGIN + WIDTH - PAGEWIDTH(Line$), Y + 20, Line$
+    PAGE PRINT
+    CALL Report
+END SUB
+
+' Number N right-aligned so that it ends at X.
+SUB RightText(X AS INTEGER, N AS INTEGER)
+    PAGE TEXT X - PAGEWIDTH(STR$(N)), Y, STR$(N)
+END SUB
+
+SUB PrintTable
+    LOCAL I AS INTEGER
+    LOCAL Total AS INTEGER
+    CALL Figures
+    IF NOT Begin() THEN
+        EXIT SUB
+    END IF
+    PAGE FONT 14, BOLD
+    PAGE TEXT MARGIN, 20, "Weekly shopping (pence)"
+    PAGE FONT 10, BOLD
+    Y = 60
+    PAGE TEXT MARGIN + 6, Y, "Item"
+    PAGE TEXT 300 - PAGEWIDTH("Amount"), Y, "Amount"
+    PAGE BOX MARGIN, 54, 270, 22 + 18 * 7
+    PAGE LINE MARGIN, 74, MARGIN + 270, 74
+    PAGE FONT 10
+    Total = 0
+    FOR I = 1 TO 6
+        Y = 60 + 18 * I
+        PAGE TEXT MARGIN + 6, Y, Item$(I)
+        CALL RightText(300, Amount(I))
+        Total = Total + Amount(I)
+    NEXT I
+    Y = 60 + 18 * 7
+    PAGE LINE MARGIN, Y - 4, MARGIN + 270, Y - 4
+    PAGE FONT 10, BOLD
+    PAGE TEXT MARGIN + 6, Y, "Total"
+    CALL RightText(300, Total)
+    PAGE PRINT
+    CALL Report
+END SUB
+
+SUB PrintChart
+    LOCAL I AS INTEGER
+    LOCAL H AS INTEGER
+    LOCAL Base AS INTEGER
+    CALL Figures
+    IF NOT Begin() THEN
+        EXIT SUB
+    END IF
+    PAGE FONT 14, BOLD
+    PAGE TEXT MARGIN, 20, "Weekly shopping (pence)"
+    PAGE FONT 8
+    Base = 300
+    ' the scale: a line every 100 pence (1 point = 1 penny / 2)
+    FOR I = 0 TO 4
+        PAGE LINE MARGIN + 30, Base - I * 50, MARGIN + 420, Base - I * 50
+        Y = Base - I * 50 - 5
+        CALL RightText(MARGIN + 26, I * 100)
+    NEXT I
+    PAGE LINE MARGIN + 30, Base - 200, MARGIN + 30, Base, 2
+    PAGE FONT 10
+    FOR I = 1 TO 6
+        H = Amount(I) / 2
+        PAGE FILL MARGIN + 40 + (I - 1) * 64, Base - H, 40, H
+        PAGE TEXT MARGIN + 40 + (I - 1) * 64, Base + 6, Item$(I)
+        Y = Base - H - 16
+        CALL RightText(MARGIN + 80 + (I - 1) * 64, Amount(I))
+    NEXT I
+    PAGE PRINT
+    CALL Report
+END SUB
+
+' For lib/app.pbas (this program has no document to save).
+FUNCTION AppSave() AS BOOLEAN
+    RETURN TRUE
+END FUNCTION
+
+SUB Quit
+    EXIT
+END SUB
+
+CALL AppSay("Choose a page to print")
+END

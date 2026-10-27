@@ -1,0 +1,468 @@
+' CONTACTS III (M10): an address book on the M10 database statements.
+' The contacts are a BANKED array of records saved as one PDB1 file,
+' CONTACTS.PDB, in the build folder (\PCW\FOLDER01 by default). DB SAVE
+' writes CONTACTS.NEW first, checks it, and keeps the previous version as
+' CONTACTS.BAK; a save that stopped half way is recovered at the next start.
+' This program can replace CONTACTS.PDB, CONTACTS.NEW and CONTACTS.BAK in
+' that folder: do not keep other files of those names there.
+' Build with --runtime-banks all (M14: it no longer fits resident-only, KI-100)
+' Page: one contact per row (name, phone, town); Up / Down / PgUp / PgDn
+' or a click choose a row (">"); Return edits it; Delete deletes it (after
+' asking). Buttons and menus: Add, Edit, Delete, Find (in names or towns,
+' upper / lower case alike), Show all, Sort (cycles: by name; by town,
+' then name; by number), Save (Ctrl+S), Quit (Ctrl+Q, asks about unsaved
+' changes).
+' Limits: 200 contacts (the sort index is a resident array); name 30,
+' phone 20, e-mail 32, town 20 characters.
+INCLUDE "lib/forms.pbas"
+
+CONST MAXN = 200
+CONST ROWS = 13
+CONST LINEH = 16
+CONST DBNAME = "CONTACTS.PDB"
+
+TYPE Contact
+    Id AS INTEGER
+    Name AS STRING * 30
+    Phone AS STRING * 20
+    Email AS STRING * 32
+    Town AS STRING * 20
+END TYPE
+
+DIM People(200) AS Contact BANKED
+DIM View(200) AS INTEGER
+DIM Count AS INTEGER
+DIM ViewN AS INTEGER
+DIM Sel AS INTEGER
+DIM Top AS INTEGER
+DIM SortMode AS INTEGER
+DIM Filter AS INTEGER
+DIM Changed AS BOOLEAN
+DIM LoadFailed AS BOOLEAN
+DIM Editing AS INTEGER
+DIM Status$ AS STRING * 36
+DIM Info$ AS STRING * 30
+DIM FName$ AS STRING * 30
+DIM FPhone$ AS STRING * 20
+DIM FEmail$ AS STRING * 32
+DIM FTown$ AS STRING * 20
+DIM FindText$ AS STRING * 20
+DIM Answer AS INTEGER
+DIM N AS INTEGER
+
+WINDOW Main, "CONTACTS III", LARGE
+LABEL Status$
+CANVAS 560, 208, PAINT Paint, MOUSE Mouse, KEYS Keys
+LABEL Info$
+BUTTON "Add", AddContact
+BUTTON "Edit", EditContact
+BUTTON "Delete", DeleteContact
+BUTTON "Find...", ShowFind
+BUTTON "Sort", NextSort
+BUTTON "Save", SaveAll
+
+WINDOW Editor, "Contact", LARGE
+TEXTBOX FName$, "Name"
+TEXTBOX FPhone$, "Phone"
+TEXTBOX FEmail$, "E-mail"
+TEXTBOX FTown$, "Town"
+BUTTON "OK", EditOK
+BUTTON "Cancel", EditCancel
+
+WINDOW Finder, "Find", LARGE
+TEXTBOX FindText$, "Find"
+BUTTON "In names", FindNames
+BUTTON "In towns", FindTowns
+BUTTON "Show all", ShowAll
+BUTTON "Back", BackToMain
+
+MENU "File"
+    ITEM "Save", SaveAll, KEY "S"
+    ITEM "Quit", QuitApp, KEY "Q"
+END MENU
+MENU "Contact"
+    ITEM "Add", AddContact, KEY "N"
+    ITEM "Edit", EditContact, KEY "E"
+    ITEM "Delete", DeleteContact, KEY "D"
+    ITEM "Find...", ShowFind, KEY "F"
+    ITEM "Show all", ShowAll, KEY "A"
+END MENU
+
+' ------------------------------------------------------------ the view
+' View(1..ViewN) = the contacts shown, in order: every contact, or those
+' matching the find text (Filter 1 names, 2 towns), sorted by SortMode
+' (1 name, 2 town then name, 3 number).
+SUB BuildView
+    IF Filter = 0 THEN
+        ViewN = Count
+        IF SortMode = 3 THEN
+            DB SORT People, Count, View, Id
+        ELSE
+            DB SORT People, Count, View, Name, NOCASE
+        END IF
+    ELSE
+        IF Filter = 1 THEN
+            DB SEARCH People, Count, View, ViewN, Name, FindText$, NOCASE
+        ELSE
+            DB SEARCH People, Count, View, ViewN, Town, FindText$, NOCASE
+        END IF
+        IF SortMode = 3 THEN
+            DB SORT People, ViewN, View, Id, KEEP
+        ELSE
+            DB SORT People, ViewN, View, Name, NOCASE, KEEP
+        END IF
+    END IF
+    IF SortMode = 2 THEN
+        DB SORT People, ViewN, View, Town, NOCASE, KEEP
+    END IF
+    IF Sel > ViewN THEN
+        Sel = ViewN
+    END IF
+    IF Sel < 1 AND ViewN > 0 THEN
+        Sel = 1
+    END IF
+    CALL KeepSelVisible
+END SUB
+
+' The view position of contact number Id (0 if not shown).
+FUNCTION ViewOf(Id AS INTEGER) AS INTEGER
+    LOCAL I AS INTEGER
+    LOCAL K AS INTEGER
+    K = DBFIND(People, Count, Id)
+    FOR I = 1 TO ViewN
+        IF View(I) = K THEN
+            RETURN I
+        END IF
+    NEXT I
+    RETURN 0
+END FUNCTION
+
+SUB KeepSelVisible
+    IF Sel < Top THEN
+        Top = MAX(1, Sel)
+    END IF
+    IF Sel >= Top + ROWS THEN
+        Top = Sel - ROWS + 1
+    END IF
+    IF Top > MAX(1, ViewN - ROWS + 1) THEN
+        Top = MAX(1, ViewN - ROWS + 1)
+    END IF
+END SUB
+
+SUB DrawRow(Row AS INTEGER)
+    LOCAL Y AS INTEGER
+    LOCAL V AS INTEGER
+    LOCAL K AS INTEGER
+    Y = Row * LINEH
+    DRAW FILL 0, Y, 560, LINEH, 8
+    V = Top + Row
+    IF V > ViewN THEN
+        EXIT SUB
+    END IF
+    K = View(V)
+    IF V = Sel THEN
+        DRAW TEXT 2, Y, ">"
+    END IF
+    IF LEN(People(K).Name) > 0 THEN
+        DRAW TEXT 14, Y, People(K).Name
+    END IF
+    IF LEN(People(K).Phone) > 0 THEN
+        DRAW TEXT 250, Y, People(K).Phone
+    END IF
+    IF LEN(People(K).Town) > 0 THEN
+        DRAW TEXT 410, Y, People(K).Town
+    END IF
+END SUB
+
+SUB Paint
+    LOCAL Row AS INTEGER
+    FOR Row = 0 TO ROWS - 1
+        CALL DrawRow(Row)
+    NEXT Row
+    CALL ShowStatus
+END SUB
+
+SUB ShowStatus
+    Status$ = STR$(ViewN) + "/" + STR$(Count)
+    SELECT CASE SortMode
+    CASE 1
+        Status$ = Status$ + ", by name"
+    CASE 2
+        Status$ = Status$ + ", by town"
+    CASE ELSE
+        Status$ = Status$ + ", by number"
+    END SELECT
+    IF Filter > 0 THEN
+        Status$ = Status$ + " found"
+    END IF
+    IF Changed THEN
+        Status$ = Status$ + " *"
+    END IF
+END SUB
+
+SUB Refresh
+    CALL KeepSelVisible
+    CALL Paint
+END SUB
+
+' ------------------------------------------------------------ events
+SUB Keys
+    SELECT CASE KEYCODE
+    CASE 224
+        Sel = MAX(MIN(1, ViewN), Sel - 1)
+    CASE 225
+        Sel = MIN(ViewN, Sel + 1)
+    CASE 232
+        Sel = MAX(MIN(1, ViewN), Sel - ROWS)
+    CASE 233
+        Sel = MIN(ViewN, Sel + ROWS)
+    CASE 230
+        Sel = MIN(1, ViewN)
+    CASE 231
+        Sel = ViewN
+    CASE 13
+        CALL EditContact
+        EXIT SUB
+    CASE 229
+        CALL DeleteContact
+        EXIT SUB
+    CASE 254
+        CALL QuitApp
+        EXIT SUB
+    CASE ELSE
+        EXIT SUB
+    END SELECT
+    Info$ = ""
+    CALL Refresh
+END SUB
+
+SUB Mouse
+    LOCAL V AS INTEGER
+    IF MOUSEEVENT <> 1 THEN
+        EXIT SUB
+    END IF
+    V = Top + MOUSEY / LINEH
+    IF V >= 1 AND V <= ViewN THEN
+        Sel = V
+        Info$ = ""
+        CALL Refresh
+    END IF
+END SUB
+
+' ------------------------------------------------------------ editing
+SUB AddContact
+    IF Count >= MAXN THEN
+        MESSAGE "Full: " + STR$(MAXN) + " contacts"
+        EXIT SUB
+    END IF
+    Editing = 0
+    FName$ = ""
+    FPhone$ = ""
+    FEmail$ = ""
+    FTown$ = ""
+    SHOW Editor
+END SUB
+
+SUB EditContact
+    LOCAL K AS INTEGER
+    IF Sel < 1 OR Sel > ViewN THEN
+        Info$ = "Choose one first"
+        CALL ShowStatus
+        EXIT SUB
+    END IF
+    K = View(Sel)
+    Editing = People(K).Id
+    FName$ = People(K).Name
+    FPhone$ = People(K).Phone
+    FEmail$ = People(K).Email
+    FTown$ = People(K).Town
+    SHOW Editor
+END SUB
+
+SUB EditOK
+    LOCAL K AS INTEGER
+    LOCAL Id AS INTEGER
+    CALL FormStart
+    CALL FormRequire(FName$, "Name")
+    CALL FormPhone(FPhone$, "Phone")
+    CALL FormEmail(FEmail$, "E-mail")
+    IF NOT FormOK() THEN
+        MESSAGE FormError$
+        EXIT SUB
+    END IF
+    IF Editing = 0 THEN
+        DB NEW People, Count
+        IF IOERR <> 0 THEN
+            MESSAGE "Full"
+            SHOW Main
+            EXIT SUB
+        END IF
+        K = Count
+    ELSE
+        K = DBFIND(People, Count, Editing)
+    END IF
+    People(K).Name = TRIM$(FName$)
+    People(K).Phone = TRIM$(FPhone$)
+    People(K).Email = TRIM$(FEmail$)
+    People(K).Town = TRIM$(FTown$)
+    Id = People(K).Id
+    Changed = TRUE
+    CALL BuildView
+    N = ViewOf(Id)
+    IF N > 0 THEN
+        Sel = N
+    END IF
+    Info$ = "Changed"
+    CALL KeepSelVisible
+    SHOW Main                   ' PAINT runs when the window opens
+END SUB
+
+SUB EditCancel
+    SHOW Main
+END SUB
+
+SUB DeleteContact
+    LOCAL K AS INTEGER
+    IF Sel < 1 OR Sel > ViewN THEN
+        Info$ = "Choose one first"
+        CALL ShowStatus
+        EXIT SUB
+    END IF
+    K = View(Sel)
+    IF NOT Confirm("Delete " + LEFT$(People(K).Name, 30) + "?") THEN
+        EXIT SUB
+    END IF
+    DB DELETE People, Count, K
+    Changed = TRUE
+    CALL BuildView
+    Info$ = "Deleted"
+    CALL Refresh
+END SUB
+
+' ------------------------------------------------------- find and sort
+SUB ShowFind
+    SHOW Finder
+END SUB
+
+SUB BackToMain
+    SHOW Main
+END SUB
+
+SUB FindIn(Where AS INTEGER)
+    IF IsBlank(FindText$) THEN
+        Filter = 0
+    ELSE
+        Filter = Where
+    END IF
+    Sel = 1
+    Top = 1
+    CALL BuildView
+    Info$ = STR$(ViewN) + " found"
+    CALL KeepSelVisible
+    SHOW Main                   ' PAINT runs when the window opens
+END SUB
+
+SUB FindNames
+    CALL FindIn(1)
+END SUB
+
+SUB FindTowns
+    CALL FindIn(2)
+END SUB
+
+SUB ShowAll
+    Filter = 0
+    CALL BuildView
+    Info$ = ""
+    CALL KeepSelVisible
+    SHOW Main                   ' PAINT runs when the window opens
+END SUB
+
+SUB SetSort(Mode AS INTEGER)
+    LOCAL Id AS INTEGER
+    Id = 0
+    IF Sel >= 1 AND Sel <= ViewN THEN
+        Id = People(View(Sel)).Id
+    END IF
+    SortMode = Mode
+    CALL BuildView
+    IF Id > 0 THEN
+        N = ViewOf(Id)
+        IF N > 0 THEN
+            Sel = N
+        END IF
+    END IF
+    CALL Refresh
+END SUB
+
+SUB NextSort
+    CALL SetSort(SortMode MOD 3 + 1)
+END SUB
+
+
+' ------------------------------------------------------------ files
+SUB LoadAll
+    DB LOAD People, Count, DBNAME
+    N = IOERR
+    LoadFailed = FALSE
+    SELECT CASE N
+    CASE 0
+        Info$ = "Loaded"
+        IF DBRECOVERED = 1 THEN
+            MESSAGE "Recovered from CONTACTS.NEW: save it"
+            Changed = TRUE
+        END IF
+        IF DBRECOVERED = 2 THEN
+            MESSAGE "Unreadable: loaded CONTACTS.BAK: save it"
+            Changed = TRUE
+        END IF
+    CASE 2
+        Info$ = "New address book"
+    CASE ELSE
+        LoadFailed = TRUE
+        Info$ = "Not loaded (" + STR$(N) + ")"
+        MESSAGE "CONTACTS.PDB unreadable (" + STR$(N) + ")"
+    END SELECT
+    SortMode = 1
+    Sel = 1
+    Top = 1
+    CALL BuildView
+END SUB
+
+SUB SaveAll
+    IF LoadFailed THEN
+        IF NOT Confirm("Replace unreadable file?") THEN
+            EXIT SUB
+        END IF
+        LoadFailed = FALSE
+    END IF
+    DB SAVE People, Count, DBNAME
+    N = IOERR
+    IF N = 0 THEN
+        Changed = FALSE
+        Info$ = "Saved"
+    ELSE
+        Info$ = "Not saved (" + STR$(N) + ")"
+        MESSAGE "Not saved (" + STR$(N) + ")"
+    END IF
+    CALL ShowStatus
+END SUB
+
+SUB QuitApp
+    IF Changed THEN
+        Answer = ASK("Unsaved changes.", "Save", "Discard", "Cancel")
+        IF Answer = 3 THEN
+            EXIT SUB
+        END IF
+        IF Answer = 1 THEN
+            CALL SaveAll
+            IF Changed THEN
+                EXIT SUB
+            END IF
+        END IF
+    END IF
+    EXIT
+END SUB
+
+CALL LoadAll
+END

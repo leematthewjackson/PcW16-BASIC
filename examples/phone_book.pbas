@@ -1,0 +1,77 @@
+' Phone book (M6 Phase 2 example): two parallel arrays, a list of names
+' sorted on request, the picked person's number in a label; Sort moves
+' the selection with its entry.
+DIM Names$(12) AS STRING
+DIM Phones$(12) AS STRING
+DIM Count AS INTEGER
+DIM I AS INTEGER
+DIM J AS INTEGER
+DIM T$ AS STRING
+DIM Name$ AS STRING
+DIM Phone$ AS STRING
+DIM Shown$ AS STRING
+WINDOW "Phone book", LARGE
+LIST Who, Names$, Count, ROWS 6, CHANGE ShowNumber
+TEXTBOX Name$, "Name"
+TEXTBOX Phone$, "Number"
+LABEL Shown$
+BUTTON "Add", AddEntry, DEFAULT
+BUTTON "Sort", SortAll
+BUTTON "Quit", Finish, KEY STOP
+SUB ShowNumber
+    IF Who = 0 THEN
+        Shown$ = ""
+    ELSE
+        Shown$ = "Tel " + Phones$(Who)
+    END IF
+END SUB
+SUB AddEntry
+    IF LEN(Name$) = 0 OR LEN(Name$) > 24 OR LEN(Phone$) > 16 THEN
+        Shown$ = "Name 1-24, number 0-16"
+        EXIT SUB
+    END IF
+    IF Count = 12 THEN
+        Shown$ = "The book is full"
+        EXIT SUB
+    END IF
+    Count = Count + 1
+    Names$(Count) = Name$
+    Phones$(Count) = Phone$
+    Who = Count
+    Name$ = ""
+    Phone$ = ""
+    CALL ShowNumber
+END SUB
+SUB SortAll
+    FOR I = 1 TO Count - 1
+        FOR J = 1 TO Count - I
+            IF Names$(J) > Names$(J + 1) THEN
+                T$ = Names$(J)
+                Names$(J) = Names$(J + 1)
+                Names$(J + 1) = T$
+                T$ = Phones$(J)
+                Phones$(J) = Phones$(J + 1)
+                Phones$(J + 1) = T$
+                IF Who = J THEN
+                    Who = J + 1
+                ELSE
+                    IF Who = J + 1 THEN
+                        Who = J
+                    END IF
+                END IF
+            END IF
+        NEXT J
+    NEXT I
+    CALL ShowNumber
+END SUB
+SUB Finish
+    EXIT
+END SUB
+Names$(1) = "Lovelace"
+Phones$(1) = "01632 960001"
+Names$(2) = "Babbage"
+Phones$(2) = "01632 960002"
+Names$(3) = "Hopper"
+Phones$(3) = "01632 960003"
+Count = 3
+END

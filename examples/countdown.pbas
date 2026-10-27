@@ -1,0 +1,32 @@
+' Countdown: loops inside button handlers (M3a example).
+' One handler changes state that another handler's FOR loop reads.
+DIM Start AS INTEGER
+DIM N AS INTEGER
+DIM Total AS INTEGER
+Start = 3
+WINDOW "Countdown"
+LABEL "Count sums a countdown from Start"
+LABEL "Longer adds one to Start"
+BUTTON "Count", RunCount
+BUTTON "Longer", MakeLonger
+BUTTON "Stop", StopNow
+SUB RunCount
+    Total = 0
+    FOR N = Start TO 1 STEP -1
+        Total = Total + N
+    NEXT N
+    MESSAGE "Counted down from " + STR$(Start) + ", sum " + STR$(Total)
+END SUB
+SUB MakeLonger
+    Start = Start + 1
+    N = 0
+    WHILE N < Start
+        N = N + 1
+    WEND
+    MESSAGE "Start is now " + STR$(N)
+END SUB
+SUB StopNow
+    MESSAGE "Stopped"
+    EXIT
+END SUB
+END

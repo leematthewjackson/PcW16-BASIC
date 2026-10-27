@@ -1,0 +1,62 @@
+' Sign-up form (M5c example): checks typed answers with AND, OR and NOT.
+' Each rule is its own SUB, run with CALL; Tidy is both a button handler
+' and a procedure that Check calls. UCASE$/LCASE$ tidy the name, and the
+' length tests come first so VAL never sees a number it cannot hold.
+DIM Name$ AS STRING
+DIM Age$ AS STRING
+DIM First$ AS STRING
+DIM Problem$ AS STRING
+DIM Agree AS BOOLEAN
+DIM Age AS INTEGER
+Name$ = "ada"
+Age$ = "17"
+WINDOW "Sign up"
+TEXTBOX Name$, "Name (starts with a letter)"
+TEXTBOX Age$, "Age (13 to 120)"
+CHECKBOX Agree, "I agree to the rules"
+BUTTON "Check", Check
+BUTTON "Tidy", Tidy
+BUTTON "Quit", Finish
+SUB Check
+    CALL Tidy
+    Problem$ = ""
+    CALL CheckName
+    CALL CheckAge
+    IF NOT Agree THEN
+        Problem$ = Problem$ + " Tick the box."
+    END IF
+    IF Problem$ = "" THEN
+        MESSAGE "Welcome, " + Name$ + "!"
+    ELSE
+        MESSAGE "Please fix:" + Problem$
+    END IF
+END SUB
+SUB CheckName
+    IF LEN(Name$) = 0 THEN
+        Problem$ = Problem$ + " Name is empty."
+        EXIT SUB
+    END IF
+    First$ = LEFT$(Name$, 1)
+    IF First$ < "A" OR First$ > "Z" THEN
+        Problem$ = Problem$ + " Name: start with a letter."
+    END IF
+END SUB
+SUB CheckAge
+    IF LEN(Age$) = 0 OR LEN(Age$) > 3 THEN
+        Problem$ = Problem$ + " Age: 1 to 3 digits."
+        EXIT SUB
+    END IF
+    Age = VAL(Age$)
+    IF Age < 13 OR Age > 120 THEN
+        Problem$ = Problem$ + " Age: 13 to 120."
+    END IF
+END SUB
+SUB Tidy
+    IF LEN(Name$) > 0 THEN
+        Name$ = UCASE$(LEFT$(Name$, 1)) + LCASE$(MID$(Name$, 2, 63))
+    END IF
+END SUB
+SUB Finish
+    EXIT
+END SUB
+END

@@ -1,0 +1,109 @@
+' sprite.pbas: sprites on a CANVAS: frames from a strip, drawn
+' through a mask, clipped at the edges, the background put back behind
+' them. INCLUDE "lib/sprite.pbas" near the top of a program with a CANVAS.
+' docs/libraries/sprite.md.
+'
+' Assets. A sprite's frames are one BITMAP, frames of W x H one under
+' another (tools/pbimage.py sheet), with a mask BITMAP of the same shape:
+' white where the sprite is drawn, black where it is transparent (the
+' sheet command's --mask). Frame F (0 = the first) is the part 0, F * H.
+'
+' The play area is the rectangle 0, 0, SprCW, SprCH of the canvas (the
+' program sets both, e.g. to the canvas size). A sprite may be partly or
+' wholly outside it: only the part inside is drawn.
+'
+' Slots. Up to 16 sprites have a slot I (1..16) the program fills:
+'   SprX(I), SprY(I)   the top-left corner     SprW(I), SprH(I)  the frame size
+'   SprF(I)            the frame               SprOn(I)          drawn now
+'   SUB SpriteShow(Sheet AS BITMAP, Mask AS BITMAP, I)
+'       draw slot I as it is now (SprOn(I) becomes TRUE)
+'   SUB SpriteHide(Back AS BITMAP, I)
+'       put back the background where slot I was drawn (from Back, a
+'       picture of the whole play area drawn at 0, 0), SprOn(I) FALSE
+'   SUB SpriteMove(Sheet AS BITMAP, Mask AS BITMAP, Back AS BITMAP, I, X, Y, F)
+'       hide slot I, move it to X, Y with frame F, show it
+'   FUNCTION SpriteHits(I, J) AS BOOLEAN     slots I and J overlap
+'   FUNCTION SpriteHitsRect(I, X, Y, W, H) AS BOOLEAN
+' Without slots:
+'   SUB SpriteDraw(Sheet AS BITMAP, Mask AS BITMAP, X, Y, F, W, H)
+'   SUB SpriteDrawOpaque(Sheet AS BITMAP, X, Y, F, W, H)  (no mask)
+'   SUB SpriteBack(Back AS BITMAP, X, Y, W, H)   that part of the background
+' Overlapping sprites: hide every one that moves, then show them all again,
+' back to front. Names: everything here starts with Sprite or Spr.
+CONST SPRITES = 16
+DIM SprX(16) AS INTEGER
+DIM SprY(16) AS INTEGER
+DIM SprW(16) AS INTEGER
+DIM SprH(16) AS INTEGER
+DIM SprF(16) AS INTEGER
+DIM SprOn(16) AS BOOLEAN
+DIM SprCW AS INTEGER
+DIM SprCH AS INTEGER
+DIM SprVX AS INTEGER
+DIM SprVY AS INTEGER
+DIM SprVW AS INTEGER
+DIM SprVH AS INTEGER
+
+' The visible part of X, Y, W, H in SprVX.. (SprVW = 0: none).
+SUB SpriteClip(X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    SprVX = MAX(X, 0)
+    SprVY = MAX(Y, 0)
+    SprVW = MIN(X + W, SprCW) - SprVX
+    SprVH = MIN(Y + H, SprCH) - SprVY
+    IF SprVW <= 0 OR SprVH <= 0 THEN
+        SprVW = 0
+        SprVH = 0
+    END IF
+END SUB
+
+SUB SpriteDraw(Sheet AS BITMAP, Mask AS BITMAP, X AS INTEGER, Y AS INTEGER, F AS INTEGER, W AS INTEGER, H AS INTEGER)
+    CALL SpriteClip(X, Y, W, H)
+    IF SprVW > 0 THEN
+        BITMAP MASK Sheet, Mask, SprVX, SprVY, SprVX - X, F * H + SprVY - Y, SprVW, SprVH
+    END IF
+END SUB
+
+SUB SpriteDrawOpaque(Sheet AS BITMAP, X AS INTEGER, Y AS INTEGER, F AS INTEGER, W AS INTEGER, H AS INTEGER)
+    CALL SpriteClip(X, Y, W, H)
+    IF SprVW > 0 THEN
+        BITMAP PUT Sheet, SprVX, SprVY, SprVX - X, F * H + SprVY - Y, SprVW, SprVH
+    END IF
+END SUB
+
+SUB SpriteBack(Back AS BITMAP, X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    CALL SpriteClip(X, Y, W, H)
+    IF SprVW > 0 THEN
+        BITMAP PUT Back, SprVX, SprVY, SprVX, SprVY, SprVW, SprVH
+    END IF
+END SUB
+
+SUB SpriteShow(Sheet AS BITMAP, Mask AS BITMAP, I AS INTEGER)
+    CALL SpriteDraw(Sheet, Mask, SprX(I), SprY(I), SprF(I), SprW(I), SprH(I))
+    SprOn(I) = TRUE
+END SUB
+
+SUB SpriteHide(Back AS BITMAP, I AS INTEGER)
+    IF SprOn(I) THEN
+        CALL SpriteBack(Back, SprX(I), SprY(I), SprW(I), SprH(I))
+    END IF
+    SprOn(I) = FALSE
+END SUB
+
+SUB SpriteMove(Sheet AS BITMAP, Mask AS BITMAP, Back AS BITMAP, I AS INTEGER, X AS INTEGER, Y AS INTEGER, F AS INTEGER)
+    CALL SpriteHide(Back, I)
+    SprX(I) = X
+    SprY(I) = Y
+    SprF(I) = F
+    CALL SpriteShow(Sheet, Mask, I)
+END SUB
+
+FUNCTION SpriteHitsRect(I AS INTEGER, X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER) AS BOOLEAN
+    IF W <= 0 OR H <= 0 OR SprW(I) <= 0 OR SprH(I) <= 0 THEN
+        RETURN FALSE
+    END IF
+    RETURN SprX(I) < X + W AND X < SprX(I) + SprW(I) AND SprY(I) < Y + H AND Y < SprY(I) + SprH(I)
+END FUNCTION
+
+FUNCTION SpriteHits(I AS INTEGER, J AS INTEGER) AS BOOLEAN
+    RETURN SpriteHitsRect(I, SprX(J), SprY(J), SprW(J), SprH(J))
+END FUNCTION

@@ -1,0 +1,9 @@
+REM M2.1 owner check R2: the runtime string-overflow report.
+REM Build with --string-capacity 4: S$ holds 3 characters, "-32768" needs 6.
+DIM N AS INTEGER
+DIM S$ AS STRING
+MESSAGE "Step 1: overflow check starts"
+N = -32768
+S$ = STR$(N)
+MESSAGE "NOT EXPECTED: this alert must never appear"
+END

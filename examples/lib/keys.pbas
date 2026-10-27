@@ -1,0 +1,114 @@
+' keys.pbas: names for keys. INCLUDE "lib/keys.pbas" near the top of
+' a program. docs/libraries/keys.md, LANGUAGE-SPEC §5.15.
+'
+' Two kinds of number name a key:
+' - KEYDOWN(code) tells whether a key is held down now. Its codes are the
+'   numbers Rosanne's keyboard interrupt keeps a key's state under (PCW045.SYS
+'   block 6 #6A6B): a key's PS/2 set-2 scan code, except the keys that send
+'   an #E0 prefix, which get a number of their own from the table at #6A31.
+'   They are the SC_ names below (owner, XAnne SPRPROBE: Left 99, Right 100,
+'   Up 101, Down 98, Space 41, A 28). A held key is how a game moves while
+'   the key is down; several keys may be down at once.
+' - KEYCODE, in a canvas's KEYS handler, is the character a key press
+'   gives (ROSAN283 Appendix A). Those are the KC_ names. A key held down
+'   repeats at the keyboard's own rate, so KEYS is right for typing and
+'   commands, not for steady movement.
+' The cursor keys and the keypad's 8, 2, 4, 6 have different SC_ codes
+' (SC_UP and SC_KP8 and so on); KC_UP is the character of both.
+'   FUNCTION KeyAxis(Minus, Plus) AS INTEGER   -1 while only the Minus key
+'       is down, 1 while only the Plus key is, else 0 (scan codes)
+' Names: SC_ and KC_ constants, KeyAxis.
+CONST SC_UP = 101
+CONST SC_DOWN = 98
+CONST SC_LEFT = 99
+CONST SC_RIGHT = 100
+CONST SC_HOME = 110
+CONST SC_END = 106
+CONST SC_PGUP = 94
+CONST SC_PGDN = 95
+CONST SC_INSERT = 80
+CONST SC_DELETE = 81
+CONST SC_RCTRL = 19
+CONST SC_RALT = 16
+CONST SC_KPENTER = 92
+CONST SC_KPDIVIDE = 109
+CONST SC_PRINTSCREEN = 57
+CONST SC_KP0 = 112
+CONST SC_KP1 = 105
+CONST SC_KP2 = 114
+CONST SC_KP3 = 122
+CONST SC_KP4 = 107
+CONST SC_KP5 = 115
+CONST SC_KP6 = 116
+CONST SC_KP7 = 108
+CONST SC_KP8 = 117
+CONST SC_KP9 = 125
+CONST SC_SPACE = 41
+CONST SC_RETURN = 90
+CONST SC_ESC = 118
+CONST SC_TAB = 13
+CONST SC_BACKSPACE = 102
+CONST SC_LSHIFT = 18
+CONST SC_RSHIFT = 89
+CONST SC_CTRL = 20
+CONST SC_ALT = 17
+CONST SC_A = 28
+CONST SC_B = 50
+CONST SC_C = 33
+CONST SC_D = 35
+CONST SC_E = 36
+CONST SC_F = 43
+CONST SC_G = 52
+CONST SC_H = 51
+CONST SC_I = 67
+CONST SC_J = 59
+CONST SC_K = 66
+CONST SC_L = 75
+CONST SC_M = 58
+CONST SC_N = 49
+CONST SC_O = 68
+CONST SC_P = 77
+CONST SC_Q = 21
+CONST SC_R = 45
+CONST SC_S = 27
+CONST SC_T = 44
+CONST SC_U = 60
+CONST SC_V = 42
+CONST SC_W = 29
+CONST SC_X = 34
+CONST SC_Y = 53
+CONST SC_Z = 26
+CONST SC_0 = 69
+CONST SC_1 = 22
+CONST SC_2 = 30
+CONST SC_3 = 38
+CONST SC_4 = 37
+CONST SC_5 = 46
+CONST SC_6 = 54
+CONST SC_7 = 61
+CONST SC_8 = 62
+CONST SC_9 = 70
+CONST KC_RETURN = 13
+CONST KC_BACKSPACE = 8
+CONST KC_TAB = 9
+CONST KC_DELETE = 229
+CONST KC_UP = 224
+CONST KC_DOWN = 225
+CONST KC_LEFT = 226
+CONST KC_RIGHT = 227
+CONST KC_HOME = 230
+CONST KC_END = 231
+CONST KC_PGUP = 232
+CONST KC_PGDN = 233
+CONST KC_STOP = 254
+
+FUNCTION KeyAxis(Minus AS INTEGER, Plus AS INTEGER) AS INTEGER
+    LOCAL V AS INTEGER
+    IF KEYDOWN(Minus) THEN
+        V = V - 1
+    END IF
+    IF KEYDOWN(Plus) THEN
+        V = V + 1
+    END IF
+    RETURN V
+END FUNCTION

@@ -1,0 +1,27 @@
+' Greeter: main-line code runs before the window opens (M3a example).
+' Four labels (the M3a layout maximum), two buttons, string functions.
+DIM Name$ AS STRING
+DIM Short$ AS STRING
+DIM Times AS INTEGER
+Name$ = "PcW16 owner"
+Times = 0
+MESSAGE "Preparing greetings for " + Name$
+WINDOW "Greeter"
+LABEL "This window opened after the"
+LABEL "main-line message was dismissed."
+LABEL "Hello greets; each greeting counts."
+LABEL "Close ends the program."
+BUTTON "Hello", SayHello
+BUTTON "Close", CloseGreeter
+SUB SayHello
+    Times = Times + 1
+    Short$ = LEFT$(Name$, 5)
+    MESSAGE "Hello, " + Name$ + " (greeting " + STR$(Times) + ")"
+    IF Times = 2 THEN
+        MESSAGE "Twice now: " + Short$ + "!"
+    END IF
+END SUB
+SUB CloseGreeter
+    EXIT
+END SUB
+END

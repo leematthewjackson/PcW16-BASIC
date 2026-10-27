@@ -1,0 +1,300 @@
+' Scientific calculator with statistics (M8 benchmark 2). The M7 calculator
+' (REAL numbers and the maths functions) plus running statistics: "add x to
+' data" counts x in; count, mean and standard deviation (sample, n - 1)
+' follow; "clear data" starts again. The texts use STRING * n (§5.4), which
+' frees the room the statistics need in the 16K program image.
+' The statistics are kept with Welford's running mean and sum of squared
+' deviations, not as a list of the numbers: a first version kept up to 2000
+' numbers in a BANKED REAL array and computed sum / min / max as well, but
+' its code did not fit the 16K image (docs/M8-MEMORY-REPORT.md, benchmark 2:
+' this program is limited by code, not by data). Data values are limited to
+' 1E15 in size and the count to 32767, so no statistic can overflow.
+' Type x (and y for the two-number operations), pick an operation and
+' click "=". Every input is checked with ISNUM, and every domain or range
+' problem is reported in the window instead of stopping the program (the
+' runtime would stop with an error, LANGUAGE-SPEC §3.1 / §8).
+' Use copies the result into x; Swap exchanges x and y; Store / Recall
+' keep one number in memory. Degrees switches SIN/COS/TAN/ATN to degrees.
+' No files.
+' Build with --string-capacity 24 (a number is typed in at most 23 characters).
+CONST BIG = 88.7
+CONST MAXN = 32767
+DIM Ops$(18) AS STRING * 18
+DIM M2 AS REAL
+DIM N AS INTEGER
+DIM Mean AS REAL
+DIM X AS REAL
+DIM Y AS REAL
+DIM R AS REAL
+DIM Memory AS REAL
+DIM Ok AS BOOLEAN
+DIM Why$ AS STRING * 24
+DIM Result$ AS STRING * 24
+DIM Mem$ AS STRING * 24
+DIM T$ AS STRING
+WINDOW "Scientific calculator", LARGE
+TEXTBOX X$, "x"
+TEXTBOX Y$, "y"
+CHOICE Op, Ops$, 18, "Operation"
+CHECKBOX Degrees, "Degrees for SIN COS TAN ATN"
+LABEL Result$
+LABEL Mem$
+BUTTON "=", Calculate, DEFAULT
+BUTTON "Use", UseResult
+BUTTON "Swap", SwapXY
+BUTTON "Store", StoreIt
+BUTTON "Recall", RecallIt
+BUTTON "Quit", Finish, KEY STOP
+
+' TRUE when ln|a| + ln|b| (a, b <> 0) shows a * b would exceed the REAL range.
+FUNCTION ProductTooBig(A AS REAL, B AS REAL) AS BOOLEAN
+    IF A = 0 OR B = 0 THEN
+        RETURN FALSE
+    END IF
+    RETURN LOG(ABS(A)) + LOG(ABS(B)) > BIG
+END FUNCTION
+
+FUNCTION Radians(A AS REAL) AS REAL
+    IF Degrees THEN
+        RETURN A * PI / 180
+    END IF
+    RETURN A
+END FUNCTION
+
+SUB Fail(Text$)
+    Ok = FALSE
+    Why$ = Text$
+END SUB
+
+SUB ReadNumber(Text$, Name$)
+    IF NOT ISNUM(Text$) THEN
+        CALL Fail(Name$ + " is not a number")
+    END IF
+END SUB
+
+SUB Power
+    LOCAL L AS REAL
+    IF X = 0 THEN
+        IF Y < 0 THEN
+            CALL Fail("0 ^ negative")
+        ELSE
+            IF Y = 0 THEN
+                R = 1
+            ELSE
+                R = 0
+            END IF
+        END IF
+        EXIT SUB
+    END IF
+    IF X < 0 AND FIX(Y) <> Y THEN
+        CALL Fail("negative ^ fraction")
+        EXIT SUB
+    END IF
+    L = LOG(ABS(X))
+    IF L <> 0 THEN
+        IF ABS(Y) > BIG / ABS(L) AND (Y > 0) = (L > 0) THEN
+            CALL Fail("result too large")
+            EXIT SUB
+        END IF
+    END IF
+    R = X ^ Y
+END SUB
+
+SUB Calculate
+    LOCAL Code AS INTEGER
+    Ok = TRUE
+    IF Op > 14 THEN
+        CALL DataOp
+        EXIT SUB
+    END IF
+    CALL ReadNumber(X$, "x")
+    IF NOT Ok THEN
+        Result$ = Why$
+        EXIT SUB
+    END IF
+    X = REALVAL(X$)
+    IF Op = 14 THEN
+        CALL AddData
+        EXIT SUB
+    END IF
+    IF Op <= 5 THEN
+        CALL ReadNumber(Y$, "y")
+        IF NOT Ok THEN
+            Result$ = Why$
+            EXIT SUB
+        END IF
+        Y = REALVAL(Y$)
+    END IF
+    SELECT CASE Op
+    CASE 1, 2
+        IF ABS(X) > 1E37 OR ABS(Y) > 1E37 THEN
+            IF Op = 2 THEN
+                Y = -Y
+            END IF
+            IF X / 2 + Y / 2 > 8.5E37 OR X / 2 + Y / 2 < -8.5E37 THEN
+                CALL Fail("result too large")
+            ELSE
+                R = X + Y
+            END IF
+        ELSE
+            IF Op = 1 THEN
+                R = X + Y
+            ELSE
+                R = X - Y
+            END IF
+        END IF
+    CASE 3
+        IF ProductTooBig(X, Y) THEN
+            CALL Fail("result too large")
+        ELSE
+            R = X * Y
+        END IF
+    CASE 4
+        IF Y = 0 THEN
+            CALL Fail("division by zero")
+        ELSE
+            IF X <> 0 AND LOG(ABS(X)) - LOG(ABS(Y)) > BIG THEN
+                CALL Fail("result too large")
+            ELSE
+                R = X / Y
+            END IF
+        END IF
+    CASE 5
+        CALL Power
+    CASE 6
+        IF X < 0 THEN
+            CALL Fail("SQR of a negative")
+        ELSE
+            R = SQR(X)
+        END IF
+    CASE 7
+        IF X > 88 THEN
+            CALL Fail("result too large")
+        ELSE
+            R = EXP(X)
+        END IF
+    CASE 8, 9
+        IF X <= 0 THEN
+            CALL Fail("LOG needs x > 0")
+        ELSE
+            R = LOG(X)
+            IF Op = 9 THEN
+                R = R / LOG(10.0)
+            END IF
+        END IF
+    CASE 10, 11, 12
+        IF ABS(Radians(X)) > 51000.0 THEN
+            CALL Fail("angle too large")
+        ELSE
+            SELECT CASE Op
+            CASE 10
+                R = SIN(Radians(X))
+            CASE 11
+                R = COS(Radians(X))
+            CASE ELSE
+                R = TAN(Radians(X))
+            END SELECT
+        END IF
+    CASE 13
+        R = ATN(X)
+        IF Degrees THEN
+            R = R * 180 / PI
+        END IF
+    END SELECT
+    IF Ok THEN
+        Result$ = "= " + STR$(R)
+    ELSE
+        Result$ = Why$
+    END IF
+END SUB
+
+' Count x into the statistics (Welford: running mean and M2, the sum of
+' squared deviations from it).
+SUB AddData
+    LOCAL D AS REAL
+    IF N = MAXN THEN
+        Result$ = "data full"
+        EXIT SUB
+    END IF
+    IF ABS(X) > 1E15 THEN
+        Result$ = "too large for data"
+        EXIT SUB
+    END IF
+    N = N + 1
+    D = X - Mean
+    Mean = Mean + D / N
+    M2 = M2 + D * (X - Mean)
+    Result$ = "n = " + STR$(N)
+END SUB
+
+SUB DataOp
+    IF Op = 18 THEN
+        N = 0
+        Mean = 0
+        M2 = 0
+        Result$ = "data cleared"
+        EXIT SUB
+    END IF
+    IF N = 0 THEN
+        Result$ = "no data"
+        EXIT SUB
+    END IF
+    SELECT CASE Op
+    CASE 15
+        Result$ = "n = " + STR$(N)
+    CASE 16
+        Result$ = "= " + STR$(Mean)
+    CASE ELSE
+        IF N = 1 THEN
+            Result$ = "needs 2 values"
+        ELSE
+            R = SQR(M2 / (N - 1))
+            Result$ = "= " + STR$(R)
+        END IF
+    END SELECT
+END SUB
+
+SUB UseResult
+    X$ = STR$(R)
+END SUB
+
+SUB SwapXY
+    T$ = X$
+    X$ = Y$
+    Y$ = T$
+END SUB
+
+SUB StoreIt
+    Memory = R
+    Mem$ = "M = " + STR$(Memory)
+END SUB
+
+SUB RecallIt
+    X$ = STR$(Memory)
+END SUB
+
+SUB Finish
+    EXIT
+END SUB
+
+Ops$(1) = "x + y"
+Ops$(2) = "x - y"
+Ops$(3) = "x * y"
+Ops$(4) = "x / y"
+Ops$(5) = "x ^ y"
+Ops$(6) = "SQR x"
+Ops$(7) = "EXP x"
+Ops$(8) = "LOG x (natural)"
+Ops$(9) = "LOG10 x"
+Ops$(10) = "SIN x"
+Ops$(11) = "COS x"
+Ops$(12) = "TAN x"
+Ops$(13) = "ATN x"
+Ops$(14) = "add x to data"
+Ops$(15) = "count of data"
+Ops$(16) = "mean of data"
+Ops$(17) = "std dev of data"
+Ops$(18) = "clear data"
+Op = 1
+Mem$ = "M = 0"
+END

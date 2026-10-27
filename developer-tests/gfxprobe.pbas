@@ -1,0 +1,111 @@
+' GFXPROBE (M9 Stage B): what do CANVAS drawing and canvas events do in
+' XAnne? Every primitive is drawn at a known place; the owner reports what
+' is seen (docs/M9-ACCEPTANCE.md, G1-G7). No files; no memory beyond the
+' program.
+'
+'   G1 Shapes   frame: a box exactly on the canvas edge; a diagonal from the
+'               top-left to the bottom-right corner; 9 grey strips (black ..
+'               white) at the bottom left inside one thin frame, the last
+'               strip white (shade 8); one statement per shade, so a
+'               runtime error's line number names the shade (lines
+'               47..55 = shades 0..8, see docs/M9-ACCEPTANCE.md G1); a black
+'               square with an inverted
+'               band across it; four corner pixels inside the box; text
+'               "Top 0" at y=4 and a horizontal line under it at y=20;
+'               text "ABCDEFGHIJKLMNOPQRSTUVWXYZ" clipped at the right edge
+'   G2 Scroll   the whole picture moves up 16 and right 8; a white strip
+'               opens at the bottom and on the left
+'   G3 Alert    shows an alert over the canvas; after OK the picture must be
+'               complete (redrawn by PAINT if Rosanne did not restore it)
+'   G4 keys     type a letter, then Up, Down, Left, Right, Home, End, PgUp,
+'               PgDn, Return, Backspace, Delete, Tab, Space: the Key line
+'               shows "K<code>.<shift> #<count>"
+'   G5 mouse    press, drag and release on the canvas: the Mouse line shows
+'               "M<1 press, 2 drag, 3 release> x,y" (canvas-relative)
+'   G6 Speed    100 lines and 50 texts, then an alert: time it
+'   G7 Quit
+DIM KeyLine$ AS STRING * 24
+DIM MouseLine$ AS STRING * 24
+DIM Keys AS INTEGER
+DIM Dx AS INTEGER
+DIM I AS INTEGER
+WINDOW "Graphics probe", LARGE
+LABEL KeyLine$
+LABEL MouseLine$
+CANVAS 400, 200, PAINT Paint, MOUSE Mouse, KEYS KeyIn
+BUTTON "Shapes", Shapes
+BUTTON "Scroll", ScrollIt
+BUTTON "Alert", AlertIt
+BUTTON "Speed", Speed
+BUTTON "Quit", Finish
+
+SUB Shapes
+    DRAW CLEAR
+    DRAW INK BLACK
+    DRAW BOX 0, 0, 400, 200
+    DRAW LINE 0, 0, 399, 199
+    DRAW FILL 4, 160, 12, 36, 0
+    DRAW FILL 16, 160, 12, 36, 1
+    DRAW FILL 28, 160, 12, 36, 2
+    DRAW FILL 40, 160, 12, 36, 3
+    DRAW FILL 52, 160, 12, 36, 4
+    DRAW FILL 64, 160, 12, 36, 5
+    DRAW FILL 76, 160, 12, 36, 6
+    DRAW FILL 88, 160, 12, 36, 7
+    DRAW FILL 100, 160, 12, 36, 8
+    DRAW BOX 3, 159, 110, 38
+    DRAW FILL 300, 40, 60, 60
+    DRAW INVERT 290, 60, 80, 10
+    DRAW PIXEL 2, 2
+    DRAW PIXEL 397, 2
+    DRAW PIXEL 2, 197
+    DRAW PIXEL 397, 197
+    DRAW TEXT 10, 4, "Top 0"
+    DRAW LINE 10, 20, 120, 20
+    DRAW TEXT 150, 100, "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+END SUB
+
+SUB Paint
+    CALL Shapes
+END SUB
+
+SUB ScrollIt
+    DRAW SCROLL 0, 0, 400, 200, 8, -16
+END SUB
+
+SUB AlertIt
+    MESSAGE "G3: after OK the picture must be complete"
+END SUB
+
+SUB Speed
+    DRAW CLEAR
+    FOR I = 0 TO 99
+        DRAW LINE 0, I * 2, 399, 199 - I * 2
+    NEXT I
+    FOR I = 0 TO 49
+        DRAW TEXT (I MOD 5) * 80, (I / 5) * 18, "Text " + STR$(I)
+    NEXT I
+    MESSAGE "G6: 100 lines and 50 texts drawn"
+END SUB
+
+SUB KeyIn
+    Keys = Keys + 1
+    KeyLine$ = "K" + STR$(KEYCODE) + "." + STR$(KEYSHIFT) + " #" + STR$(Keys)
+END SUB
+
+SUB Mouse
+    MouseLine$ = "M" + STR$(MOUSEEVENT) + " " + STR$(MOUSEX) + "," + STR$(MOUSEY)
+    IF MOUSEEVENT = 2 THEN
+        IF MOUSEX >= 0 AND MOUSEX < 400 AND MOUSEY >= 0 AND MOUSEY < 200 THEN
+            DRAW PIXEL MOUSEX, MOUSEY
+        END IF
+    END IF
+END SUB
+
+SUB Finish
+    EXIT
+END SUB
+
+KeyLine$ = "Keys: none yet"
+MouseLine$ = "Mouse: none yet"
+END

@@ -1,0 +1,151 @@
+' UIBENCH (M9 UI benchmark): a keyboard- and mouse-driven list on a canvas.
+' 60 records are drawn as rows on a canvas; Up / Down move the selection,
+' PgUp / PgDn and the Page buttons page through, Home / End jump, a click
+' selects a row. The selected row is inverted; only the rows that change
+' are redrawn. Menus sort the list or reverse it; the status line shows the
+' selection and the page. Return opens the selected record in an alert.
+CONST COUNT = 60
+CONST PAGE = 12
+CONST ROWH = 18
+DIM Name$(60) AS STRING * 20
+DIM Score(60) AS INTEGER
+DIM Sel AS INTEGER
+DIM Top AS INTEGER
+DIM Status$ AS STRING * 24
+DIM I AS INTEGER
+DIM J AS INTEGER
+DIM T$ AS STRING * 20
+DIM T AS INTEGER
+WINDOW "UI benchmark", LARGE
+LABEL Status$
+CANVAS 420, 216, PAINT Paint, MOUSE Click, KEYS KeyIn
+BUTTON "Page up", PageUp
+BUTTON "Page down", PageDown
+BUTTON "Quit", Finish
+MENU "List"
+    ITEM "Sort by name", SortNames, KEY "N"
+    ITEM "Sort by score", SortScores, KEY "S"
+    ITEM "Reverse", Reverse, KEY "R"
+END MENU
+
+SUB DrawRow(K AS INTEGER)
+    LOCAL Y AS INTEGER
+    IF K < Top OR K >= Top + PAGE THEN
+        EXIT SUB
+    END IF
+    Y = (K - Top) * ROWH
+    DRAW FILL 0, Y, 420, ROWH, 8
+    DRAW TEXT 4, Y + 1, STR$(K) + ". " + Name$(K)
+    DRAW TEXT 300, Y + 1, STR$(Score(K))
+    IF K = Sel THEN
+        DRAW INVERT 0, Y, 420, ROWH
+    END IF
+END SUB
+
+SUB Paint
+    FOR I = Top TO Top + PAGE - 1
+        CALL DrawRow(I)
+    NEXT I
+    CALL ShowStatus
+END SUB
+
+SUB ShowStatus
+    Status$ = "Row " + STR$(Sel) + " of " + STR$(COUNT) + ", page " + STR$((Top - 1) / PAGE + 1)
+END SUB
+
+SUB MoveTo(K AS INTEGER)
+    LOCAL Old AS INTEGER
+    Old = Sel
+    Sel = MIN(COUNT, MAX(1, K))
+    IF Sel < Top OR Sel >= Top + PAGE THEN
+        Top = ((Sel - 1) / PAGE) * PAGE + 1
+        CALL Paint
+    ELSE
+        CALL DrawRow(Old)
+        CALL DrawRow(Sel)
+        CALL ShowStatus
+    END IF
+END SUB
+
+SUB KeyIn
+    SELECT CASE KEYCODE
+    CASE 224
+        CALL MoveTo(Sel - 1)
+    CASE 225
+        CALL MoveTo(Sel + 1)
+    CASE 230
+        CALL MoveTo(1)
+    CASE 231
+        CALL MoveTo(COUNT)
+    CASE 232
+        CALL PageUp
+    CASE 233
+        CALL PageDown
+    CASE 13
+        MESSAGE Name$(Sel) + " scored " + STR$(Score(Sel))
+    END SELECT
+END SUB
+
+SUB Click
+    IF MOUSEEVENT = 1 THEN
+        CALL MoveTo(Top + MOUSEY / ROWH)
+    END IF
+END SUB
+
+SUB PageUp
+    CALL MoveTo(Sel - PAGE)
+END SUB
+
+SUB PageDown
+    CALL MoveTo(Sel + PAGE)
+END SUB
+
+SUB Swap(A AS INTEGER, B AS INTEGER)
+    T$ = Name$(A)
+    Name$(A) = Name$(B)
+    Name$(B) = T$
+    T = Score(A)
+    Score(A) = Score(B)
+    Score(B) = T
+END SUB
+
+SUB SortNames
+    FOR I = 1 TO COUNT - 1
+        FOR J = 1 TO COUNT - I
+            IF Name$(J) > Name$(J + 1) THEN
+                CALL Swap(J, J + 1)
+            END IF
+        NEXT J
+    NEXT I
+    CALL Paint
+END SUB
+
+SUB SortScores
+    FOR I = 1 TO COUNT - 1
+        FOR J = 1 TO COUNT - I
+            IF Score(J) < Score(J + 1) THEN
+                CALL Swap(J, J + 1)
+            END IF
+        NEXT J
+    NEXT I
+    CALL Paint
+END SUB
+
+SUB Reverse
+    FOR I = 1 TO COUNT / 2
+        CALL Swap(I, COUNT + 1 - I)
+    NEXT I
+    CALL Paint
+END SUB
+
+SUB Finish
+    EXIT
+END SUB
+
+FOR I = 1 TO COUNT
+    Name$(I) = MID$("KestrelOtterBadgerHeronStoatLynxMarten", ((I * 7) MOD 7) * 5 + 1, 5) + " " + STR$((I * 53) MOD 97)
+    Score(I) = (I * 37) MOD 101
+NEXT I
+Sel = 1
+Top = 1
+END

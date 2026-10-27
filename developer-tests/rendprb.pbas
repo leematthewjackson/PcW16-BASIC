@@ -1,0 +1,294 @@
+' RENDPROBE (M11 corrective): the XAnne evidence needed before MDEDIT III,
+' CONTACTS IV and STARTER are redrawn (docs/M11-CORRECTIVE.md).
+'   Widths  TEXTWIDTH (os_dialog_string_width) against the drawn text: each
+'           sample is drawn, then a box TEXTWIDTH pixels wide around it.
+'   Look    the same paragraph two ways: proportional text (one DRAW TEXT a
+'           line) with a selection and a caret placed by TEXTWIDTH, and the
+'           M11 grid of 11-pixel cells.
+'   Speed   each drawing operation timed by the PcW16 clock (SECONDS): how
+'           many fit in 2 seconds, so the cost of one in milliseconds.
+'   Pages   whole pages timed the same way (10 seconds): an editor page and a
+'           list page, each drawn the M11 way (cells) and proportionally.
+'   Keys    how often the canvas KEYS handler ran while typing in the box.
+' It writes no files. Build twice, with and without the runtime bank:
+'   python3 tools/build.py xanne/rendprb.pbas --runtime-banks all
+'   python3 tools/build.py xanne/rendprb.pbas --prg build/rendprn.prg
+CONST CELL = 11
+CONST ROWH = 16
+CONST OPS = 7
+DIM Info$ AS STRING * 24
+DIM Typed$ AS STRING * 40
+DIM S$ AS STRING * 60
+DIM L$(13) AS STRING * 60
+DIM Count(11) AS INTEGER
+DIM Loops AS INTEGER
+DIM KeyCalls AS INTEGER
+DIM Showing AS INTEGER
+DIM K AS INTEGER
+
+WINDOW Main, "RENDPROBE", LARGE
+LABEL Info$
+CANVAS 560, 192, PAINT Paint, KEYS Keys
+TEXTBOX Typed$, "Type here"
+BUTTON "Widths", ShowWidths
+BUTTON "Look", ShowLook
+BUTTON "Speed", RunSpeed
+BUTTON "Pages", RunPages
+BUTTON "Keys", ShowKeys
+BUTTON "Quit", Quit
+
+SUB Fill
+    L$(1) = "# MDEDIT acceptance document"
+    L$(2) = ""
+    L$(3) = "This file is EDTEST.MD, the M9 editor's acceptance"
+    L$(4) = "text (docs/M9-ACCEPTANCE.md). Copy it to the floppy"
+    L$(5) = "as EDTEST.MD; keep this original elsewhere."
+    L$(6) = "## Section 1"
+    L$(7) = "Line 1.1: the quick brown fox jumps over the lazy"
+    L$(8) = "dog (11). Line 1.2: the quick brown fox jumps over"
+    L$(9) = "the lazy dog (12). WWWWW iiiii MMMMM lllll 0123456"
+    L$(10) = "Ann Dawson"
+    L$(11) = "0161 496 0000"
+    L$(12) = "Manchester"
+    L$(13) = "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWX"
+END SUB
+
+' The text of a number of tenths, e.g. 123 -> "12.3".
+FUNCTION Tenths$(V AS INTEGER) AS STRING
+    IF V < 0 THEN
+        RETURN "-" + STR$(-V / 10) + "." + STR$(-V MOD 10)
+    END IF
+    RETURN STR$(V / 10) + "." + STR$(V MOD 10)
+END FUNCTION
+
+SUB Paint
+    SELECT CASE Showing
+    CASE 1
+        CALL ShowWidths
+    CASE 2
+        CALL ShowLook
+    CASE 3
+        CALL ShowResults
+    CASE ELSE
+        DRAW CLEAR
+        DRAW TEXT 4, 4, "RENDPROBE: Widths, Look, Speed, Pages, Keys"
+    END SELECT
+END SUB
+
+' One sample at row R: the text, a box TEXTWIDTH wide around it, the number.
+SUB Sample(R AS INTEGER, T$ AS STRING)
+    LOCAL W AS INTEGER
+    W = TEXTWIDTH(T$)
+    DRAW TEXT 6, R * 20 + 2, T$
+    DRAW BOX 5, R * 20, W + 2, 20
+    DRAW TEXT 450, R * 20 + 2, STR$(W)
+END SUB
+
+SUB ShowWidths
+    Showing = 1
+    DRAW CLEAR
+    CALL Sample(0, "WWWWWWWWWW")
+    CALL Sample(1, "Label tests: long, short, empty")
+    CALL Sample(2, "iiiiiiiiiiiiiiiiiiii")
+    CALL Sample(3, "The quick brown fox jumps over the lazy dog")
+    CALL Sample(4, "0123456789 +-*/ ()[] .,;:!?")
+    CALL Sample(5, "MDEDIT acceptance document")
+    CALL Sample(6, "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    CALL Sample(7, "abcdefghijklmnopqrstuvwxyz")
+    Info$ = "W: 10 W = " + STR$(TEXTWIDTH("WWWWWWWWWW"))
+END SUB
+
+' Line I proportionally at row Y; characters A+1..A+N inverted; a caret
+' before character C+1 (none if C < 0).
+SUB RunLine(Y AS INTEGER, I AS INTEGER, A AS INTEGER, N AS INTEGER, C AS INTEGER)
+    DRAW TEXT 4, Y, L$(I)
+    IF N > 0 THEN
+        DRAW INVERT 4 + TEXTWIDTH(LEFT$(L$(I), A)), Y, TEXTWIDTH(MID$(L$(I), A + 1, N)), ROWH
+    END IF
+    IF C >= 0 THEN
+        DRAW INVERT 4 + TEXTWIDTH(LEFT$(L$(I), C)), Y, 1, ROWH
+    END IF
+END SUB
+
+SUB ShowLook
+    Showing = 2
+    CALL Fill
+    DRAW CLEAR
+    CALL RunLine(0, 1, 2, 6, -1)
+    CALL RunLine(16, 3, 0, 0, 5)
+    CALL RunLine(32, 4, 0, 0, -1)
+    CALL RunLine(48, 7, 20, 5, -1)
+    CALL RunLine(64, 9, 19, 17, -1)
+    DRAW TEXT 4, 88, "The same lines on the M11 grid of 11-pixel cells:"
+    DRAW TEXT 4, 112, L$(1), CELL
+    DRAW INVERT 4 + 2 * CELL, 112, 6 * CELL, ROWH
+    DRAW TEXT 4, 128, L$(3), CELL
+    DRAW TEXT 4, 144, L$(4), CELL
+    DRAW TEXT 4, 160, L$(7), CELL
+    DRAW INVERT 4 + 20 * CELL, 160, 5 * CELL, ROWH
+    Info$ = "L: look at the lines"
+END SUB
+
+' One operation of kind Op (0 = nothing: the loop's own cost).
+SUB DoOp(Op AS INTEGER)
+    SELECT CASE Op
+    CASE 1
+        DRAW TEXT 4, 170, "x"
+    CASE 2
+        DRAW TEXT 4, 170, S$
+    CASE 3
+        DRAW TEXT 4, 170, S$, CELL
+    CASE 4
+        DRAW INVERT 500, 170, CELL, ROWH
+    CASE 5
+        DRAW FILL 500, 170, 40, ROWH, 8
+    CASE 6
+        DRAW LINE 540, 170, 540, 181
+    CASE 7
+        K = TEXTWIDTH(S$)
+    CASE 8
+        CALL EditorPage(FALSE)
+    CASE 9
+        CALL EditorPage(TRUE)
+    CASE 10
+        CALL ListPage(FALSE)
+    CASE 11
+        CALL ListPage(TRUE)
+    END SELECT
+END SUB
+
+' How many operations of kind Op fit in Secs seconds of the clock, counted
+' from the start of a second.
+FUNCTION Measure(Op AS INTEGER, Secs AS INTEGER) AS INTEGER
+    LOCAL S0 AS INTEGER
+    LOCAL N AS INTEGER
+    S0 = SECONDS
+    WHILE SECONDS = S0
+    WEND
+    S0 = SECONDS
+    N = 0
+    WHILE (SECONDS - S0 + 3600) MOD 3600 < Secs
+        CALL DoOp(Op)
+        N = N + 1
+    WEND
+    RETURN N
+END FUNCTION
+
+' An editor page: 12 rows of up to 50 characters, each row cleared first.
+SUB EditorPage(Runs AS BOOLEAN)
+    LOCAL R AS INTEGER
+    FOR R = 0 TO 11
+        DRAW FILL 0, R * ROWH, 560, ROWH, 8
+        IF Runs THEN
+            DRAW TEXT 4, R * ROWH, L$(R + 1)
+        ELSE
+            DRAW TEXT 4, R * ROWH, L$(R + 1), CELL
+        END IF
+    NEXT R
+END SUB
+
+' A list page: 12 rows of three columns, the fourth row inverted.
+SUB ListPage(Runs AS BOOLEAN)
+    LOCAL R AS INTEGER
+    FOR R = 0 TO 11
+        DRAW FILL 0, R * ROWH, 560, ROWH, 8
+        IF Runs THEN
+            DRAW TEXT 2, R * ROWH, L$(10)
+            DRAW TEXT 244, R * ROWH, L$(11)
+            DRAW TEXT 420, R * ROWH, L$(12)
+        ELSE
+            DRAW TEXT 2, R * ROWH, "Ann Dawson            0161 496 0000   Manchester", CELL
+        END IF
+        IF R = 3 THEN
+            DRAW INVERT 0, R * ROWH, 560, ROWH
+        END IF
+    NEXT R
+END SUB
+
+SUB ShowResults
+    LOCAL I AS INTEGER
+    DRAW CLEAR
+    DRAW TEXT 4, 0, "ms each, minus the loop (" + Tenths$(20000 / MAX(1, Loops)) + " ms, " + STR$(Loops) + " in 2 s)"
+    FOR I = 1 TO OPS
+        IF Count(I) > 0 THEN
+            DRAW TEXT 4, I * ROWH, Label$(I)
+            DRAW TEXT 250, I * ROWH, Tenths$(20000 / Count(I) - 20000 / Loops) + " (" + STR$(Count(I)) + ")"
+        END IF
+    NEXT I
+    FOR I = 8 TO 11
+        IF Count(I) > 0 THEN
+            DRAW TEXT 4, I * ROWH, Label$(I)
+            DRAW TEXT 250, I * ROWH, STR$(10000 / Count(I)) + " ms a page (" + STR$(Count(I)) + " in 10 s)"
+        END IF
+    NEXT I
+END SUB
+
+FUNCTION Label$(I AS INTEGER) AS STRING
+    SELECT CASE I
+    CASE 1
+        RETURN "T1 DRAW TEXT, 1 character"
+    CASE 2
+        RETURN "T2 DRAW TEXT, 40 characters"
+    CASE 3
+        RETURN "T3 DRAW TEXT, 40 cells"
+    CASE 4
+        RETURN "T4 DRAW INVERT, one cell"
+    CASE 5
+        RETURN "T5 DRAW FILL, 40 x 16"
+    CASE 6
+        RETURN "T6 DRAW LINE, 2 pixels"
+    CASE 7
+        RETURN "T7 TEXTWIDTH, 40 characters"
+    CASE 8
+        RETURN "P1 editor page, cells"
+    CASE 9
+        RETURN "P2 editor page, proportional"
+    CASE 10
+        RETURN "P3 list page, cells"
+    CASE 11
+        RETURN "P4 list page, proportional"
+    END SELECT
+    RETURN ""
+END FUNCTION
+
+SUB RunSpeed
+    LOCAL I AS INTEGER
+    MESSAGE "Speed: about 20 seconds. Do not touch the mouse or keys."
+    S$ = "The quick brown fox jumps over the lazy d"
+    DRAW CLEAR
+    Loops = Measure(0, 2)
+    FOR I = 1 TO 7
+        Count(I) = Measure(I, 2)
+    NEXT I
+    Showing = 3
+    CALL ShowResults
+    Info$ = "S: done"
+END SUB
+
+SUB RunPages
+    LOCAL I AS INTEGER
+    MESSAGE "Pages: about 45 seconds. Do not touch the mouse or keys."
+    CALL Fill
+    FOR I = 8 TO 11
+        Count(I) = Measure(I, 10)
+    NEXT I
+    Showing = 3
+    CALL ShowResults
+    Info$ = "P: done"
+END SUB
+
+SUB Keys
+    KeyCalls = KeyCalls + 1
+END SUB
+
+SUB ShowKeys
+    MESSAGE "KEYS ran " + STR$(KeyCalls) + " times; the box holds " + STR$(LEN(Typed$)) + " characters"
+    KeyCalls = 0
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+
+CALL Fill
+END

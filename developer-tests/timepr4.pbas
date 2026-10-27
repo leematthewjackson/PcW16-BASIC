@@ -1,0 +1,22 @@
+' TIMEPR4 (M13 corrective, responsiveness): how a TIMER of 4/16 s comes, and how
+' fine its clock is (xanne/timecore.pbas says what each button measures).
+' TIMEPRB asks for EVERY 1 TICKS, TIMEPR4 for EVERY 4 TICKS: a TIMER's
+' interval is fixed when the program is built. docs/M13-ACCEPTANCE.md, RT2.
+'   python3 tools/build.py xanne/timepr4.pbas --runtime-banks all
+CONST PERIOD = 4
+INCLUDE "timecore.pbas"
+
+WINDOW Main, "TIMEPR4", LARGE
+LABEL Info$
+CANVAS 560, 200, PAINT Paint
+BUTTON "Clock", RunClock
+BUTTON "Idle", RunIdle
+BUTTON "Load", RunLoad
+BUTTON "Keys", RunKeys
+BUTTON "Restart", RunRestart
+BUTTON "Quit", Quit
+TIMER Tick, EVERY 4 TICKS
+
+Info$ = "TIMEPR4: EVERY 4 TICKS"
+R$(1) = "Clock, Idle, Load, Keys, Restart: see RT2"
+END

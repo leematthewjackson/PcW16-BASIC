@@ -1,0 +1,164 @@
+' STARTER (M11 Stage E3): a small, complete application to copy and grow -
+' a to-do list kept in TODO.PDB, in about 130 lines of BASIC.
+'
+' What it shows:
+'   - a window with a canvas list (lib/listview.pbas), buttons and menus;
+'   - typed records in a database file with safe saving (DB SAVE keeps
+'     TODO.BAK) and recovery at start;
+'   - a status line and the unsaved-changes question (lib/app.pbas).
+'
+' Use: type a task and press Add; Up / Down or a
+' click choose a task; Done (or Space) ticks it or unticks it; Delete
+' removes it; Save keeps the list (Ctrl+S); Quit (Ctrl+Q) asks about
+' unsaved changes. The program writes TODO.PDB, TODO.NEW and TODO.BAK in
+' the build folder (\PCW\FOLDER01 by default) and nothing else.
+'
+' Build with --runtime-banks all (python3 tools/build.py examples/starter.pbas --runtime-banks all)
+' Copy build/starter.prg to the PcW16 as STARTER.PRG and run it.
+INCLUDE "lib/app.pbas"
+INCLUDE "lib/listview.pbas"
+
+TYPE Task
+    Id AS INTEGER
+    Text AS STRING * 40
+    Done AS BOOLEAN
+END TYPE
+
+DIM Tasks(100) AS Task BANKED
+DIM Count AS INTEGER
+DIM NewText$ AS STRING * 40
+
+WINDOW Main, "To do", LARGE
+LABEL AppStatus$
+CANVAS 560, 160, PAINT Paint, MOUSE Mouse, KEYS Keys
+TEXTBOX NewText$, "New task"
+BUTTON "Add", AddTask, DEFAULT
+BUTTON "Done", ToggleDone
+BUTTON "Delete", DeleteTask
+BUTTON "Save", SaveList
+
+MENU "File"
+    ITEM "Save", SaveList, KEY "S"
+    ITEM "Quit", QuitApp, KEY "Q"
+END MENU
+
+' The list library asks for each row's columns and is told when the choice moves.
+' Column 1 the tick box, column 2 the task (two columns, so the text lines
+' up whatever the box shows).
+FUNCTION ListCell$(I AS INTEGER, K AS INTEGER) AS STRING
+    IF K = 2 THEN
+        RETURN Tasks(I).Text
+    END IF
+    IF Tasks(I).Done THEN
+        RETURN "[x]"
+    END IF
+    RETURN "[ ]"
+END FUNCTION
+
+SUB ListPicked
+END SUB
+
+SUB ShowStatus
+    IF AppDirty THEN
+        CALL AppSay("* " + STR$(Count) + " tasks")
+    ELSE
+        CALL AppSay(STR$(Count) + " tasks")
+    END IF
+END SUB
+
+SUB Paint
+    ListCount = Count
+    CALL ListPaint
+    CALL ShowStatus
+END SUB
+
+SUB Keys
+    IF (KEYSHIFT AND 4) <> 0 THEN
+        EXIT SUB                    ' Ctrl keys belong to the menus
+    END IF
+    IF ListKey() THEN
+        EXIT SUB
+    END IF
+    IF KEYCODE = 32 THEN
+        CALL ToggleDone
+    END IF
+    IF KEYCODE = 229 THEN
+        CALL DeleteTask
+    END IF
+END SUB
+
+SUB Mouse
+    CALL ListMouse
+END SUB
+
+SUB AddTask
+    IF LEN(TRIM$(NewText$)) = 0 THEN
+        EXIT SUB
+    END IF
+    DB NEW Tasks, Count
+    IF IOERR <> 0 THEN
+        CALL AppFail("Not added", IOERR)
+        EXIT SUB
+    END IF
+    Tasks(Count).Text = TRIM$(NewText$)
+    NewText$ = ""
+    ListSel = Count
+    CALL AppChanged
+    CALL Paint
+END SUB
+
+SUB ToggleDone
+    IF ListSel < 1 THEN
+        EXIT SUB
+    END IF
+    Tasks(ListSel).Done = NOT Tasks(ListSel).Done
+    CALL AppChanged
+    CALL Paint
+END SUB
+
+SUB DeleteTask
+    IF ListSel < 1 THEN
+        EXIT SUB
+    END IF
+    DB DELETE Tasks, Count, ListSel
+    CALL AppChanged
+    CALL Paint
+END SUB
+
+SUB SaveList
+    DB SAVE Tasks, Count, "TODO.PDB"
+    IF IOERR = 0 THEN
+        CALL AppSaved
+    ELSE
+        CALL AppFail("Not saved", IOERR)
+    END IF
+    CALL ShowStatus
+END SUB
+
+' lib/app.pbas calls this when the user chooses Save in the unsaved-changes question.
+FUNCTION AppSave() AS BOOLEAN
+    CALL SaveList
+    RETURN NOT AppDirty
+END FUNCTION
+
+SUB QuitApp
+    IF AppMayClose() THEN
+        EXIT
+    END IF
+END SUB
+
+ListRows = 10
+ListWidth = 560
+ListCols = 2
+ListX(1) = 2
+ListX(2) = 30
+DB LOAD Tasks, Count, "TODO.PDB"
+IF IOERR <> 0 AND IOERR <> 2 THEN
+    CALL AppFail("TODO.PDB", IOERR)
+END IF
+IF DBRECOVERED <> 0 THEN
+    MESSAGE "TODO.PDB was recovered from a copy: save it"
+    CALL AppChanged
+END IF
+ListSel = 1
+END

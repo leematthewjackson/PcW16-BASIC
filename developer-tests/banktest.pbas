@@ -1,0 +1,23 @@
+' BANKTEST (M8 KI-34 retest): the compiled BANKED runtime at block ends.
+' Four alerts; in each, the part before [ must equal the part inside [ ].
+' Blocks: A uses 2 (8192 INTEGERs each), S$ uses 1 (1024 x 16 bytes): so
+' A(8192) ends at the end of block 1, A(16384) at the end of block 2 (both
+' have a successor), and S$(1024) at the end of the last block, where
+' Rosanne's os_copy_24bit returns its harmless carry (KNOWN-ISSUES KI-34).
+' Start-up clears all three blocks, the last one included. No files.
+' Needs 3 free 16K blocks.
+DIM A(16384) AS INTEGER BANKED
+DIM S$(1024) AS STRING * 15 BANKED
+A(1) = 11
+A(8192) = 81
+A(8193) = 82
+A(16384) = -1
+S$(1) = "first"
+S$(1024) = "last of block"
+MESSAGE "B1: " + STR$(A(1)) + " " + STR$(A(8192)) + " " + STR$(A(8193)) + " " + STR$(A(16384)) + " [11 81 82 -1]"
+MESSAGE "B2: " + S$(1) + " " + S$(1024) + " [first last of block]"
+S$(1024) = S$(1) + "!"
+A(16384) = A(1) + A(8192)
+MESSAGE "B3: " + S$(1024) + " " + STR$(A(16384)) + " [first! 92]"
+MESSAGE "B4: " + STR$(LEN(S$(512))) + STR$(A(100)) + STR$(A(16383)) + " [000]"
+END

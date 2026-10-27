@@ -1,0 +1,480 @@
+' MDEDIT (M9 flagship): a plain-text / Markdown editor written in BASIC.
+' The document lives in a TEXT buffer (bytes kept exactly: CR LF, LF, tabs);
+' the page is drawn on a CANVAS, the caret as a "|" between characters.
+'
+' Keys (on the editing page): letters, digits and symbols type; Return splits
+' the line; Backspace / Delete join lines at their ends; cursor keys, Home,
+' End, PgUp, PgDn move; Tab types 4 spaces; Stop quits (asks about unsaved
+' changes). Ctrl+S save, Ctrl+O open, Ctrl+F find, Ctrl+G find next,
+' Ctrl+L go to line, Ctrl+Q quit (menus).
+' A mouse click puts the caret on the clicked line (the column is estimated).
+'
+' Files, in the build folder (\PCW\FOLDER01 by default): it starts with
+' EDTEST.MD. Saving writes MDEDIT.TMP first and only then replaces the file
+' (KILL, NAME); if the replacement fails the text is still in MDEDIT.TMP.
+' "Save as" replaces a file of that name after asking.
+' The document's own name is DocName$; the Files... window's name box is
+' only what was typed there (Open and Save as take it; Save never does).
+'
+' Limits: 60000 bytes of text; 32767 lines; 49 characters of a line are
+' shown at a time (the page scrolls sideways); the caret column after a
+' mouse click is an estimate (Rosanne's dialog font is proportional).
+CONST ROWS = 13
+CONST COLS = 48
+CONST LINEH = 16
+CONST TEMPNAME = "MDEDIT.TMP"
+DIM Doc AS TEXT * 60000
+DIM Status$ AS STRING * 24
+DIM Info$ AS STRING * 24
+DIM FileName$ AS STRING * 13
+DIM DocName$ AS STRING * 13
+DIM Target$ AS STRING * 13
+DIM InTemp AS BOOLEAN
+DIM FindText$ AS STRING * 40
+DIM GoLine AS INTEGER
+DIM CurLine AS INTEGER
+DIM CurCol AS INTEGER
+DIM TopLine AS INTEGER
+DIM LeftCol AS INTEGER
+DIM Seg$ AS STRING * 100
+DIM Answer AS INTEGER
+DIM Redraw AS BOOLEAN
+DIM N AS INTEGER
+
+WINDOW Main, "MDEDIT", LARGE
+LABEL Status$
+CANVAS 560, 208, PAINT Paint, MOUSE Mouse, KEYS Keys
+LABEL Info$
+BUTTON "Save", SaveDoc
+BUTTON "Find next", FindNext
+BUTTON "Files...", ShowTools
+BUTTON "Quit", QuitEditor
+
+WINDOW Tools, "MDEDIT - files and search", LARGE
+TEXTBOX FileName$, "File name (8.3)"
+TEXTBOX FindText$, "Find"
+NUMBERBOX GoLine, "Go to line", MIN 1
+BUTTON "Open", OpenDoc
+BUTTON "Save as", SaveAs
+BUTTON "Find", FindFirst
+BUTTON "Go to", GoToLine
+BUTTON "Back", BackToMain
+
+MENU "File"
+    ITEM "Open...", ShowTools, KEY "O"
+    ITEM "Save", SaveDoc, KEY "S"
+    ITEM "Save as...", ShowTools
+    ITEM "-"
+    ITEM "Quit", QuitEditor, KEY "Q"
+END MENU
+MENU "Edit"
+    ITEM "Find...", ShowTools, KEY "F"
+    ITEM "Find next", FindNext, KEY "G"
+    ITEM "Go to line...", ShowTools, KEY "L"
+    ITEM "Top", GoTop
+    ITEM "Bottom", GoBottom
+END MENU
+
+' ------------------------------------------------------------ drawing
+SUB DrawLine(Row AS INTEGER)
+    LOCAL Line AS INTEGER
+    LOCAL P AS INTEGER
+    LOCAL Y AS INTEGER
+    Y = Row * LINEH
+    DRAW FILL 0, Y, 560, LINEH, 8
+    Line = TopLine + Row
+    IF Line > TEXTLINES(Doc) THEN
+        EXIT SUB
+    END IF
+    Seg$ = ""
+    IF LeftCol <= TEXTLEN(Doc, Line) + 1 THEN
+        Seg$ = TEXTGET$(Doc, Line, LeftCol, COLS)
+    END IF
+    IF Line = CurLine THEN
+        P = CurCol - LeftCol
+        Seg$ = LEFT$(Seg$, P) + "|" + MID$(Seg$, P + 1, COLS)
+    END IF
+    IF LEN(Seg$) > 0 THEN
+        DRAW TEXT 2, Y, Seg$
+    END IF
+END SUB
+
+SUB Paint
+    LOCAL Row AS INTEGER
+    FOR Row = 0 TO ROWS - 1
+        CALL DrawLine(Row)
+    NEXT Row
+    Redraw = FALSE
+    CALL ShowStatus
+END SUB
+
+SUB ShowStatus
+    Status$ = "L" + STR$(CurLine) + "/" + STR$(TEXTLINES(Doc)) + " C" + STR$(CurCol)
+    IF Unsaved() THEN
+        Status$ = Status$ + " *"
+    END IF
+END SUB
+
+' Changes not yet in the document's file: edits since the last good save,
+' or a save that reached MDEDIT.TMP only (TEXT SAVE to MDEDIT.TMP clears
+' TEXTCHANGED, but the document's file still has the old text).
+FUNCTION Unsaved() AS BOOLEAN
+    RETURN TEXTCHANGED(Doc) OR InTemp
+END FUNCTION
+
+' Keep the caret on the page; a full redraw if the page moved.
+SUB Follow
+    IF CurLine < TopLine THEN
+        TopLine = CurLine
+        Redraw = TRUE
+    END IF
+    IF CurLine >= TopLine + ROWS THEN
+        TopLine = CurLine - ROWS + 1
+        Redraw = TRUE
+    END IF
+    IF CurCol < LeftCol THEN
+        LeftCol = MAX(1, CurCol - 8)
+        Redraw = TRUE
+    END IF
+    IF CurCol > LeftCol + COLS - 1 THEN
+        LeftCol = CurCol - COLS + 8
+        Redraw = TRUE
+    END IF
+END SUB
+
+' After a change on the caret's line only: that line, else the page.
+SUB Refresh(OldLine AS INTEGER)
+    CALL Follow
+    IF Redraw THEN
+        CALL Paint
+    ELSE
+        IF OldLine <> CurLine THEN
+            CALL DrawLine(OldLine - TopLine)
+        END IF
+        CALL DrawLine(CurLine - TopLine)
+        CALL ShowStatus
+    END IF
+END SUB
+
+SUB ClampCol
+    IF CurCol > TEXTLEN(Doc, CurLine) + 1 THEN
+        CurCol = TEXTLEN(Doc, CurLine) + 1
+    END IF
+END SUB
+
+' ------------------------------------------------------------- keys
+SUB Keys
+    LOCAL Old AS INTEGER
+    LOCAL K AS INTEGER
+    Old = CurLine
+    K = KEYCODE
+    Info$ = ""
+    SELECT CASE K
+    CASE 32 TO 126, 128 TO 223
+        IF TEXTFREE(Doc) < 1 THEN
+            Info$ = "The text is full"
+        ELSE
+            TEXT INSERT Doc, CurLine, CurCol, CHR$(K)
+            CurCol = CurCol + 1
+        END IF
+    CASE 9
+        IF TEXTFREE(Doc) < 4 THEN
+            Info$ = "The text is full"
+        ELSE
+            TEXT INSERT Doc, CurLine, CurCol, "    "
+            CurCol = CurCol + 4
+        END IF
+    CASE 13
+        IF TEXTFREE(Doc) < 2 THEN
+            Info$ = "The text is full"
+        ELSE
+            TEXT SPLIT Doc, CurLine, CurCol
+            CurLine = CurLine + 1
+            CurCol = 1
+            Redraw = TRUE
+        END IF
+    CASE 8
+        IF CurCol > 1 THEN
+            CurCol = CurCol - 1
+            TEXT DELETE Doc, CurLine, CurCol, 1
+        ELSE
+            IF CurLine > 1 THEN
+                CurLine = CurLine - 1
+                CurCol = TEXTLEN(Doc, CurLine) + 1
+                TEXT JOIN Doc, CurLine
+                Redraw = TRUE
+            END IF
+        END IF
+    CASE 229
+        IF CurCol <= TEXTLEN(Doc, CurLine) THEN
+            TEXT DELETE Doc, CurLine, CurCol, 1
+        ELSE
+            IF CurLine < TEXTLINES(Doc) THEN
+                TEXT JOIN Doc, CurLine
+                Redraw = TRUE
+            END IF
+        END IF
+    CASE 224
+        IF CurLine > 1 THEN
+            CurLine = CurLine - 1
+            CALL ClampCol
+        END IF
+    CASE 225
+        IF CurLine < TEXTLINES(Doc) THEN
+            CurLine = CurLine + 1
+            CALL ClampCol
+        END IF
+    CASE 226
+        IF CurCol > 1 THEN
+            CurCol = CurCol - 1
+        ELSE
+            IF CurLine > 1 THEN
+                CurLine = CurLine - 1
+                CurCol = TEXTLEN(Doc, CurLine) + 1
+            END IF
+        END IF
+    CASE 227
+        IF CurCol <= TEXTLEN(Doc, CurLine) THEN
+            CurCol = CurCol + 1
+        ELSE
+            IF CurLine < TEXTLINES(Doc) THEN
+                CurLine = CurLine + 1
+                CurCol = 1
+            END IF
+        END IF
+    CASE 230
+        CurCol = 1
+        IF (KEYSHIFT AND 4) <> 0 THEN
+            CurLine = 1
+        END IF
+    CASE 231
+        IF (KEYSHIFT AND 4) <> 0 THEN
+            CurLine = TEXTLINES(Doc)
+        END IF
+        CurCol = TEXTLEN(Doc, CurLine) + 1
+    CASE 232
+        CurLine = MAX(1, CurLine - ROWS)
+        TopLine = MAX(1, TopLine - ROWS)
+        CALL ClampCol
+        Redraw = TRUE
+    CASE 233
+        CurLine = MIN(TEXTLINES(Doc), CurLine + ROWS)
+        TopLine = MIN(MAX(1, TEXTLINES(Doc) - ROWS + 1), TopLine + ROWS)
+        CALL ClampCol
+        Redraw = TRUE
+    CASE 254
+        CALL QuitEditor
+        EXIT SUB
+    CASE ELSE
+        EXIT SUB
+    END SELECT
+    CALL Refresh(Old)
+END SUB
+
+SUB Mouse
+    LOCAL Old AS INTEGER
+    IF MOUSEEVENT <> 1 THEN
+        EXIT SUB
+    END IF
+    Old = CurLine
+    CurLine = MIN(TEXTLINES(Doc), TopLine + MOUSEY / LINEH)
+    CurCol = LeftCol + MAX(0, MOUSEX - 2) / 7
+    CALL ClampCol
+    CALL Refresh(Old)
+END SUB
+
+' ------------------------------------------------------------- files
+SUB StartDoc
+    CurLine = 1
+    CurCol = 1
+    TopLine = 1
+    LeftCol = 1
+    Redraw = TRUE
+END SUB
+
+' Open the file named in FileName$; it becomes the document's name only if
+' it was read (or does not exist yet: a new file).
+SUB LoadFile
+    TEXT LOAD Doc, FileName$
+    N = IOERR
+    CALL StartDoc
+    InTemp = FALSE
+    DocName$ = ""
+    SELECT CASE N
+    CASE 0
+        DocName$ = FileName$
+        Info$ = "Opened " + FileName$
+    CASE 2
+        DocName$ = FileName$
+        Info$ = "New file " + FileName$
+    CASE 247
+        Info$ = "Not opened"
+        MESSAGE "Not a file name: [" + FileName$ + "]"
+    CASE 246
+        Info$ = "Too big for MDEDIT"
+        MESSAGE FileName$ + " is larger than 60000 bytes; nothing was loaded."
+    CASE ELSE
+        Info$ = "Not opened"
+        MESSAGE FileName$ + " could not be read: error " + STR$(N)
+    END SELECT
+END SUB
+
+' Save to TEMPNAME, then replace Target$ with it. On success Target$ is the
+' document's name. If the replacement fails the text is in TEMPNAME and the
+' document stays marked as unsaved.
+SUB WriteFile
+    IF LEN(Target$) = 0 THEN
+        MESSAGE "No file name: use Files... and Save as."
+        EXIT SUB
+    END IF
+    TEXT SAVE Doc, TEMPNAME
+    N = IOERR
+    IF N <> 0 THEN
+        MESSAGE "Not saved: error " + STR$(N) + ". " + Target$ + " is unchanged."
+        KILL TEMPNAME
+        Info$ = "Not saved"
+        EXIT SUB
+    END IF
+    InTemp = TRUE
+    KILL Target$
+    N = IOERR
+    IF N <> 0 AND N <> 2 THEN
+        MESSAGE "Saved as " + TEMPNAME + " only: [" + Target$ + "] could not be replaced (" + STR$(N) + ")"
+        Info$ = "In " + TEMPNAME
+        EXIT SUB
+    END IF
+    NAME TEMPNAME AS Target$
+    N = IOERR
+    IF N <> 0 THEN
+        MESSAGE "Saved as " + TEMPNAME + " only: rename to [" + Target$ + "] failed (" + STR$(N) + ")"
+        Info$ = "In " + TEMPNAME
+        EXIT SUB
+    END IF
+    InTemp = FALSE
+    DocName$ = Target$
+    Info$ = "Saved " + Target$
+END SUB
+
+SUB SaveDoc
+    Target$ = DocName$
+    CALL WriteFile
+    CALL ShowStatus
+END SUB
+
+' True if it is fine to drop the text: no changes, or the user agrees.
+FUNCTION MayDiscard() AS BOOLEAN
+    IF NOT Unsaved() THEN
+        RETURN TRUE
+    END IF
+    Answer = ASK("There are unsaved changes.", "Save", "Discard", "Cancel")
+    IF Answer = 1 THEN
+        Target$ = DocName$
+        CALL WriteFile
+        RETURN NOT Unsaved()
+    END IF
+    RETURN Answer = 2
+END FUNCTION
+
+SUB QuitEditor
+    IF MayDiscard() THEN
+        EXIT
+    END IF
+END SUB
+
+SUB ShowTools
+    GoLine = CurLine
+    FileName$ = DocName$
+    SHOW Tools
+END SUB
+
+SUB BackToMain
+    SHOW Main
+END SUB
+
+SUB OpenDoc
+    IF LEN(FileName$) = 0 THEN
+        MESSAGE "Type a file name first."
+        EXIT SUB
+    END IF
+    IF MayDiscard() THEN
+        CALL LoadFile
+    END IF
+    SHOW Main
+END SUB
+
+SUB SaveAs
+    IF LEN(FileName$) = 0 THEN
+        MESSAGE "Type a file name first."
+        EXIT SUB
+    END IF
+    Answer = ASK("Save as " + FileName$ + "? A file of that name is replaced.", "Save", "Cancel")
+    IF Answer = 1 THEN
+        Target$ = FileName$
+        CALL WriteFile
+    END IF
+    SHOW Main
+END SUB
+
+' ------------------------------------------------------------ search
+SUB SearchFrom(Line AS INTEGER, Col AS INTEGER)
+    IF LEN(FindText$) = 0 THEN
+        Info$ = "Nothing to find"
+        EXIT SUB
+    END IF
+    N = TEXTFIND(Doc, FindText$, Line, Col)
+    IF N = 0 THEN
+        Info$ = "Not found"
+        EXIT SUB
+    END IF
+    CurLine = N
+    CurCol = TEXTCOL(Doc)
+    Info$ = "Found"
+    CALL Follow
+    Redraw = TRUE
+END SUB
+
+SUB FindFirst
+    CALL SearchFrom(1, 1)
+    SHOW Main
+END SUB
+
+SUB FindNext
+    LOCAL Old AS INTEGER
+    Old = CurLine
+    IF CurCol <= TEXTLEN(Doc, CurLine) THEN
+        CALL SearchFrom(CurLine, CurCol + 1)
+    ELSE
+        IF CurLine < TEXTLINES(Doc) THEN
+            CALL SearchFrom(CurLine + 1, 1)
+        ELSE
+            Info$ = "Not found"
+        END IF
+    END IF
+    CALL Refresh(Old)
+END SUB
+
+SUB GoToLine
+    CurLine = MIN(MAX(1, GoLine), TEXTLINES(Doc))
+    CurCol = 1
+    CALL Follow
+    Redraw = TRUE
+    SHOW Main
+END SUB
+
+SUB GoTop
+    CurLine = 1
+    CurCol = 1
+    CALL Refresh(1)
+END SUB
+
+SUB GoBottom
+    LOCAL Old AS INTEGER
+    Old = CurLine
+    CurLine = TEXTLINES(Doc)
+    CurCol = TEXTLEN(Doc, CurLine) + 1
+    CALL Refresh(Old)
+END SUB
+
+FileName$ = "EDTEST.MD"
+CALL LoadFile
+END

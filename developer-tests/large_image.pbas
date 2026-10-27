@@ -1,0 +1,166 @@
+REM M2.1 owner check R3: an image close to the 16K first-bank limit.
+REM The IF FALSE blocks are never taken; they only make the image large.
+DIM N AS INTEGER
+MESSAGE "Step 1: large image loaded"
+IF FALSE THEN
+MESSAGE "000 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "001 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "002 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "003 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "004 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "005 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "006 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "007 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "008 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "009 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "010 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "011 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "012 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "013 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "014 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "015 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "016 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "017 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "018 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "019 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "020 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "021 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "022 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "023 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "024 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "025 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "026 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "027 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "028 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "029 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "030 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "031 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "032 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "033 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "034 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "035 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "036 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "037 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "038 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "039 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "040 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "041 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "042 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "043 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "044 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "045 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "046 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "047 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "048 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "049 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "050 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "051 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+IF FALSE THEN
+MESSAGE "052 er text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never displayed. Filler text that is never di"
+END IF
+N = 16
+MESSAGE "Step 2: alert text read near the top of the bank, " + STR$(N) + "K"
+END

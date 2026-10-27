@@ -1,0 +1,165 @@
+' listview.pbas: a list of
+' rows on a CANVAS, chosen with the keyboard or the mouse. INCLUDE
+' "lib/listview.pbas" before the program's own SUBs. Each row is drawn in
+' Rosanne's dialog font, normally spaced (one DRAW TEXT a column); a column
+' too long for its room is cut at a whole character so that it never reaches
+' the next column (TEXTWIDTH measures it). The chosen row is shown inverted.
+'
+' The program
+'   - sets ListCount (rows in the list, 0 or more), ListRows (rows shown,
+'     each 16 pixels) and ListWidth (the canvas width) before the canvas is
+'     painted, and ListSel / ListTop when it wants another row chosen;
+'   - sets ListCols (1..8, default 1) and ListX(1..ListCols), the x where
+'     each column starts (ListX(1) is 2 unless set); column K runs to 4
+'     pixels before ListX(K + 1), the last one to 2 pixels before the edge;
+'   - defines FUNCTION ListCell$(I AS INTEGER, K AS INTEGER) AS STRING, the
+'     text of row I (1..ListCount) in column K, and SUB ListPicked, which
+'     runs after the chosen row changed (it may do nothing);
+'   - calls ListPaint from its canvas's PAINT handler (and after it changed
+'     the rows), ListKey() from KEYS and ListMouse from MOUSE.
+'
+' Keys: Up, Down, PgUp, PgDn, Home, End move the choice; ListKey() returns
+' TRUE when it used the key, FALSE for any other key (the program's own).
+' Mouse: a press or a drag over a row chooses it. A key or a click redraws
+' only the two rows that change, unless the list scrolls.
+'
+' State: ListSel is the chosen row (0 only when the list is empty), ListTop
+' the first row shown. Names: everything here starts with List.
+CONST LIST_H = 16
+DIM ListCount AS INTEGER
+DIM ListRows AS INTEGER
+DIM ListWidth AS INTEGER
+DIM ListSel AS INTEGER
+DIM ListTop AS INTEGER
+DIM ListCols AS INTEGER
+DIM ListX(8) AS INTEGER
+
+' S$ cut at a whole character to at most W pixels wide.
+FUNCTION ListFit$(S$ AS STRING, W AS INTEGER) AS STRING
+    LOCAL N AS INTEGER
+    IF TEXTWIDTH(S$) <= W THEN
+        RETURN S$
+    END IF
+    N = LEN(S$) - 1
+    WHILE N > 0 AND TEXTWIDTH(LEFT$(S$, N)) > W
+        N = N - 1
+    WEND
+    RETURN LEFT$(S$, MAX(0, N))
+END FUNCTION
+
+' ListSel within 1..ListCount (0 when empty) and on the page.
+SUB ListClamp
+    IF ListCount <= 0 THEN
+        ListSel = 0
+        ListTop = 1
+        EXIT SUB
+    END IF
+    ListSel = MIN(MAX(1, ListSel), ListCount)
+    IF ListTop < 1 THEN
+        ListTop = 1
+    END IF
+    IF ListSel < ListTop THEN
+        ListTop = ListSel
+    END IF
+    IF ListSel >= ListTop + ListRows THEN
+        ListTop = ListSel - ListRows + 1
+    END IF
+    IF ListTop > MAX(1, ListCount - ListRows + 1) THEN
+        ListTop = MAX(1, ListCount - ListRows + 1)
+    END IF
+END SUB
+
+' Row I of the list, if it is on the page.
+SUB ListDrawRow(I AS INTEGER)
+    LOCAL Y AS INTEGER
+    LOCAL K AS INTEGER
+    LOCAL N AS INTEGER
+    LOCAL X AS INTEGER
+    LOCAL R AS INTEGER
+    IF I < ListTop OR I >= ListTop + ListRows THEN
+        EXIT SUB
+    END IF
+    Y = (I - ListTop) * LIST_H
+    DRAW FILL 0, Y, ListWidth, LIST_H, 8
+    IF I < 1 OR I > ListCount THEN
+        EXIT SUB
+    END IF
+    N = MAX(1, MIN(8, ListCols))
+    FOR K = 1 TO N
+        X = ListX(K)
+        IF K = 1 AND X = 0 THEN
+            X = 2
+        END IF
+        IF K < N THEN
+            R = ListX(K + 1) - 4
+        ELSE
+            R = ListWidth - 2
+        END IF
+        IF R > X THEN
+            DRAW TEXT X, Y, ListFit$(ListCell$(I, K), R - X)
+        END IF
+    NEXT K
+    IF I = ListSel THEN
+        DRAW INVERT 0, Y, ListWidth, LIST_H
+    END IF
+END SUB
+
+SUB ListPaint
+    LOCAL I AS INTEGER
+    CALL ListClamp
+    FOR I = ListTop TO ListTop + ListRows - 1
+        CALL ListDrawRow(I)
+    NEXT I
+END SUB
+
+' Choose row I (kept within the list): redraw what changed, then ListPicked.
+SUB ListMoveTo(I AS INTEGER)
+    LOCAL Old AS INTEGER
+    LOCAL OldTop AS INTEGER
+    Old = ListSel
+    OldTop = ListTop
+    ListSel = I
+    CALL ListClamp
+    IF ListTop <> OldTop THEN
+        CALL ListPaint
+    ELSE
+        IF ListSel <> Old THEN
+            CALL ListDrawRow(Old)
+            CALL ListDrawRow(ListSel)
+        END IF
+    END IF
+    IF ListSel <> Old THEN
+        CALL ListPicked
+    END IF
+END SUB
+
+FUNCTION ListKey() AS BOOLEAN
+    SELECT CASE KEYCODE
+    CASE 224
+        CALL ListMoveTo(ListSel - 1)
+    CASE 225
+        CALL ListMoveTo(ListSel + 1)
+    CASE 232
+        CALL ListMoveTo(ListSel - ListRows)
+    CASE 233
+        CALL ListMoveTo(ListSel + ListRows)
+    CASE 230
+        CALL ListMoveTo(1)
+    CASE 231
+        CALL ListMoveTo(ListCount)
+    CASE ELSE
+        RETURN FALSE
+    END SELECT
+    RETURN TRUE
+END FUNCTION
+
+SUB ListMouse
+    LOCAL I AS INTEGER
+    IF MOUSEEVENT = 3 THEN
+        EXIT SUB
+    END IF
+    I = ListTop + MIN(ListRows - 1, MAX(0, MOUSEY) / LIST_H)
+    IF I <= ListCount THEN
+        CALL ListMoveTo(I)
+    END IF
+END SUB

@@ -1,0 +1,19 @@
+' Number Format (M5a example): right-aligned columns, zero padding and a
+' growing bar, made with concatenation and computed LEFT$/RIGHT$ counts.
+DIM Line$ AS STRING
+DIM Bar$ AS STRING
+DIM N AS INTEGER
+DIM Width AS INTEGER
+Width = 6
+FOR N = 1 TO 3
+    Line$ = RIGHT$("      " + STR$(N * N * 111), Width) + "|"
+    MESSAGE "Row " + STR$(N) + ": " + Line$
+NEXT N
+MESSAGE "Padded: " + RIGHT$("00000" + STR$(42), 5)
+Bar$ = ""
+FOR N = 1 TO 4
+    Bar$ = Bar$ + LEFT$("####", N)
+NEXT N
+MESSAGE "Bar: " + Bar$ + " (" + STR$(LEN(Bar$)) + ")"
+MESSAGE "Fifth from the end: " + MID$(Bar$, LEN(Bar$) - 4, 1)
+END

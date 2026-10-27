@@ -1,0 +1,71 @@
+' CELLPROBE (M11): XAnne probe for DRAW TEXT x, y, text$, cell (text on a
+' fixed grid of 11-pixel cells, used by MDEDIT III, CONTACTS IV and
+' STARTER). It checks what the simulator cannot:
+'   P1  every printable character (32..223) fits its 11-pixel cell: rows of
+'       characters, then the same rows with every other cell inverted, and
+'       a tick at every cell edge. No glyph may cross into the next cell.
+'   P2  a click: the label shows the column of the nearest cell edge, as
+'       MDEDIT III computes it (x - 4 + 5) / 11 + 1.
+'   P3  speed: "Page" draws 13 rows of 50 characters, one cell at a time;
+'       time it between the two alerts.
+' It writes no files.
+' Build: python3 tools/build.py xanne/cellprb.pbas --runtime-banks all
+CONST CELL = 11
+DIM Line$ AS STRING * 60
+DIM Click$ AS STRING * 24
+DIM K AS INTEGER
+DIM R AS INTEGER
+
+WINDOW Main, "CELLPROBE", LARGE
+LABEL Click$
+CANVAS 560, 208, PAINT Paint, MOUSE Mouse
+BUTTON "Glyphs", Paint
+BUTTON "Page", Page
+BUTTON "Quit", Quit
+
+' Characters First..First+49 (as many as are printable) into Line$.
+SUB Chars(First AS INTEGER)
+    LOCAL C AS INTEGER
+    Line$ = ""
+    FOR C = First TO MIN(First + 49, 223)
+        Line$ = Line$ + CHR$(C)
+    NEXT C
+END SUB
+
+SUB Paint
+    DRAW CLEAR
+    FOR R = 0 TO 3
+        CALL Chars(32 + R * 50)
+        DRAW TEXT 4, R * 40, Line$, CELL
+        DRAW TEXT 4, R * 40 + 18, Line$, CELL
+        FOR K = 0 TO LEN(Line$) - 1 STEP 2
+            DRAW INVERT 4 + K * CELL, R * 40 + 18, CELL, 16
+        NEXT K
+        FOR K = 0 TO 50
+            DRAW LINE 4 + K * CELL, R * 40 + 16, 4 + K * CELL, R * 40 + 17
+        NEXT K
+    NEXT R
+    Click$ = "P1: check the glyphs"
+END SUB
+
+SUB Mouse
+    IF MOUSEEVENT = 1 THEN
+        Click$ = "P2: column " + STR$((MAX(0, MOUSEX - 4) + CELL / 2) / CELL + 1)
+    END IF
+END SUB
+
+SUB Page
+    MESSAGE "P3 start: press OK and time until P3 done"
+    DRAW CLEAR
+    CALL Chars(65)
+    FOR R = 0 TO 12
+        DRAW TEXT 4, R * 16, Line$, CELL
+    NEXT R
+    MESSAGE "P3 done"
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+
+END

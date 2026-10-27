@@ -1,0 +1,195 @@
+' BMPPROBE (M12 Stage A): the XAnne evidence for BITMAPs
+' (docs/M12-GRAPHICS-FINDINGS.md). The screen layout the runtime assumes
+' (80 bytes a row, bit 7 leftmost, a set bit white) and the BIOS bitmap
+' calls are known only from ROSAN283 and a static reading of PCW045.SYS.
+'   Copy    BITMAP GET of the test card on the left, BITMAP PUT beside it:
+'           the copy must match the card exactly (not a negative, not
+'           shifted, not mirrored).
+'   Points  POINT on eight pixels of the card whose colour is known.
+'   File    BITMAP SAVE to BMPPROBE.PBI, BITMAP LOAD into a second bitmap,
+'           drawn on the right. Copy BMPPROBE.PBI to a PC and run
+'             python3 tools/pbicheck.py BMPPROBE.PBI --pbm card.pbm
+'   Speed   GET and PUT of the card, and of the whole canvas, timed by the
+'           PcW16 clock (SECONDS).
+' It writes BMPPROBE.PBI (and BMPPROBE.BAK the second time) and nothing
+' else. Build twice, with and without the runtime bank:
+'   python3 tools/build.py xanne/bmpprb.pbas --runtime-banks all
+'   python3 tools/build.py xanne/bmpprb.pbas --prg build/bmpprn.prg
+CONST CW = 120
+CONST CH = 80
+DIM Card AS BITMAP * 120, 80
+DIM Back AS BITMAP * 120, 80
+DIM Whole AS BITMAP * 560, 200
+DIM Info$ AS STRING * 24
+DIM R$(6) AS STRING * 60
+DIM Showing AS INTEGER
+DIM K AS INTEGER
+
+WINDOW Main, "BMPPROBE", LARGE
+LABEL Info$
+CANVAS 560, 200, PAINT Paint
+BUTTON "Copy", ShowCopy
+BUTTON "Points", ShowPoints
+BUTTON "File", ShowFile
+BUTTON "Speed", RunSpeed
+BUTTON "Quit", Quit
+
+' The test card at 0, 0 (CW x CH): a frame; a black square at 8, 8 (16 x
+' 16) with a white pixel at its centre; a single black pixel at 40, 8 and
+' at 41, 9; a diagonal from 0, 79 to 79, 0; the grey shades 0..7 as bars;
+' an arrow pointing right (a mirrored copy points left); the text "PBI".
+SUB DrawCard
+    LOCAL I AS INTEGER
+    DRAW FILL 0, 0, CW, CH, 8
+    DRAW BOX 0, 0, CW, CH
+    DRAW FILL 8, 8, 16, 16
+    DRAW INK WHITE
+    DRAW PIXEL 16, 16
+    DRAW INK BLACK
+    DRAW PIXEL 40, 8
+    DRAW PIXEL 41, 9
+    DRAW LINE 0, 79, 79, 0
+    FOR I = 0 TO 7
+        DRAW FILL 56 + I * 7, 30, 6, 12, I
+    NEXT I
+    DRAW LINE 60, 60, 100, 60
+    DRAW LINE 100, 60, 94, 54
+    DRAW LINE 100, 60, 94, 66
+    DRAW TEXT 30, 60, "PBI"
+END SUB
+
+SUB Results
+    LOCAL I AS INTEGER
+    DRAW FILL 0, CH + 4, 560, 200 - CH - 4, 8
+    FOR I = 1 TO 6
+        DRAW TEXT 4, CH + 4 + (I - 1) * 18, R$(I)
+    NEXT I
+END SUB
+
+SUB Paint
+    DRAW CLEAR
+    CALL DrawCard
+    SELECT CASE Showing
+    CASE 1
+        BITMAP PUT Card, 160, 0
+    CASE 3
+        BITMAP PUT Back, 320, 0
+    END SELECT
+    CALL Results
+END SUB
+
+SUB Clear
+    LOCAL I AS INTEGER
+    FOR I = 1 TO 6
+        R$(I) = ""
+    NEXT I
+END SUB
+
+SUB ShowCopy
+    CALL Clear
+    DRAW CLEAR
+    CALL DrawCard
+    BITMAP GET Card, 0, 0, CW, CH
+    BITMAP PUT Card, 160, 0
+    Showing = 1
+    R$(1) = "C1: the copy at 160, 0 must match the card at 0, 0 exactly."
+    R$(2) = "C2: BITMAPW " + STR$(BITMAPW(Card)) + ", BITMAPH " + STR$(BITMAPH(Card)) + " (want 120, 80)"
+    CALL Results
+    Info$ = "Copy: compare the cards"
+END SUB
+
+' "x,y=v (want w)" for one pixel; Bad counts the differences.
+FUNCTION Check$(X AS INTEGER, Y AS INTEGER, Want AS INTEGER) AS STRING
+    LOCAL V AS INTEGER
+    V = POINT(X, Y)
+    IF V <> Want THEN
+        K = K + 1
+    END IF
+    RETURN STR$(X) + "," + STR$(Y) + "=" + STR$(V) + " "
+END FUNCTION
+
+SUB ShowPoints
+    CALL Clear
+    DRAW CLEAR
+    CALL DrawCard
+    K = 0
+    R$(1) = "P1: " + Check$(9, 9, 1) + Check$(16, 16, 0) + Check$(40, 8, 1) + Check$(41, 8, 0)
+    R$(2) = "P2: " + Check$(41, 9, 1) + Check$(4, 4, 0) + Check$(0, 79, 1) + Check$(119, 40, 1)
+    R$(3) = "P3: want 1 0 1 0 / 1 0 1 1;  differences: " + STR$(K)
+    Showing = 2
+    CALL Results
+    Info$ = "Points: " + STR$(K) + " differences"
+END SUB
+
+SUB ShowFile
+    LOCAL E1 AS INTEGER
+    CALL Clear
+    DRAW CLEAR
+    CALL DrawCard
+    BITMAP GET Card, 0, 0, CW, CH
+    BITMAP SAVE Card, "BMPPROBE.PBI"
+    E1 = IOERR
+    BITMAP LOAD Back, "BMPPROBE.PBI"
+    R$(1) = "F1: SAVE IOERR " + STR$(E1) + ", LOAD IOERR " + STR$(IOERR) + " (want 0, 0)"
+    R$(2) = "F2: loaded " + STR$(BITMAPW(Back)) + " x " + STR$(BITMAPH(Back)) + " (want 120 x 80)"
+    R$(3) = "F3: the card at 320, 0 comes from the file: it must match."
+    BITMAP PUT Back, 320, 0
+    Showing = 3
+    CALL Results
+    Info$ = "File: written and read"
+END SUB
+
+' How many of operation Op fit in Secs seconds of the clock.
+FUNCTION Measure(Op AS INTEGER, Secs AS INTEGER) AS INTEGER
+    LOCAL S0 AS INTEGER
+    LOCAL N AS INTEGER
+    S0 = SECONDS
+    WHILE SECONDS = S0
+    WEND
+    S0 = SECONDS
+    N = 0
+    WHILE (SECONDS - S0 + 3600) MOD 3600 < Secs
+        SELECT CASE Op
+        CASE 1
+            BITMAP GET Card, 0, 0, CW, CH
+        CASE 2
+            BITMAP PUT Card, 160, 0
+        CASE 3
+            BITMAP GET Whole, 0, 0, 560, 200
+        CASE 4
+            BITMAP PUT Whole, 0, 0
+        CASE 5
+            K = POINT(9, 9)
+        END SELECT
+        N = N + 1
+    WEND
+    RETURN N
+END FUNCTION
+
+' Milliseconds for one operation from a count in Secs seconds, as "n ms".
+FUNCTION Ms$(N AS INTEGER, Secs AS INTEGER) AS STRING
+    IF N = 0 THEN
+        RETURN "over " + STR$(Secs) + " s"
+    END IF
+    RETURN STR$(Secs * 1000 / N) + " ms (" + STR$(N) + " in " + STR$(Secs) + " s)"
+END FUNCTION
+
+SUB RunSpeed
+    CALL Clear
+    Info$ = "Speed: wait 20 seconds"
+    DRAW CLEAR
+    CALL DrawCard
+    R$(1) = "S1 GET 120 x 80: " + Ms$(Measure(1, 3), 3)
+    R$(2) = "S2 PUT 120 x 80: " + Ms$(Measure(2, 3), 3)
+    R$(3) = "S3 GET 560 x 200: " + Ms$(Measure(3, 5), 5)
+    R$(4) = "S4 PUT 560 x 200: " + Ms$(Measure(4, 5), 5)
+    R$(5) = "S5 POINT: " + Ms$(Measure(5, 2), 2)
+    Showing = 4
+    CALL Results
+    Info$ = "Speed: done"
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+END

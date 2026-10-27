@@ -1,0 +1,610 @@
+' JUMPER (M13 Stage H): a single-screen platform game for the PcW16.
+'
+' Run and jump across the platforms, collect every coin and keep clear of
+' the beetles. Hold Left / Right to run, Space (or Up) to jump: a jump
+' rises, slows, falls and lands on whatever platform is below. Touching a
+' beetle costs a life; three lives. P pauses, Stop quits.
+'
+' It is real time, not turn-based. The game moves in steps of 1/8 s of
+' the clock: each TIMER event (asked for EVERY 2 TICKS) does as many steps
+' as the time since the last one covers (lib/pace.pbas, at most four), so
+' the game keeps its speed however often the event comes (in XAnne a
+' Rosanne timer stopped once a second: docs/M13-RESPONSIVENESS.md), and draws once. KEYDOWN reads the keys held down at each step (LANGUAGE-SPEC
+' §5.15), so running and jumping can be held and combined; a press of
+' Space or Up too short to be seen held is caught by the KEYS handler.
+' Sprites are frames of masked strips drawn with lib/sprite.pbas (BITMAP
+' MASK, §5.14); the scenery is drawn once and kept in the bitmap Back,
+' which puts the background back where a sprite has been. Only what moved
+' is drawn again, after the step is worked out, so nothing is off the
+' screen for long. docs/M13-PLATFORMER.md.
+'
+' Pictures (examples/assets, made by tools/pbimage.py build): JHERO.PBI
+' and JHEROM.PBI, the hero's 8 frames of 16 x 24 (standing, two running,
+' jumping; facing right, then left); JBUG.PBI / JBUGM.PBI, a beetle's 2
+' frames of 16 x 12; JCOIN.PBI / JCOINM.PBI, a coin's 2 frames of 8 x 8.
+' Copy them with JUMPER.PRG. Without them the game says which is missing.
+' Build with --runtime-banks all (python3 tools/build.py examples/jumper.pbas --runtime-banks all)
+INCLUDE "lib/geom.pbas"
+INCLUDE "lib/sprite.pbas"
+INCLUDE "lib/keys.pbas"
+INCLUDE "lib/pace.pbas"
+
+CONST CW = 480
+CONST CH = 220
+CONST GROUND = 204
+CONST HW = 16
+CONST HH = 24
+CONST RUN = 4
+CONST JUMP = 13
+CONST GRAVITY = 2
+CONST FALLMAX = 10
+CONST PLATFORMS = 7
+CONST COINS = 7
+CONST BUGS = 2
+CONST TITLE = 0
+CONST PLAYING = 1
+CONST PAUSED = 2
+CONST WON = 3
+CONST OVER = 4
+CONST PLAYER = 1
+CONST STEPTICKS = 2
+CONST CATCHUP = 4
+
+DIM Hero AS BITMAP * 16, 192
+DIM HeroM AS BITMAP * 16, 192
+DIM Bug AS BITMAP * 16, 24
+DIM BugM AS BITMAP * 16, 24
+DIM Coin AS BITMAP * 8, 16
+DIM CoinM AS BITMAP * 8, 16
+DIM Back AS BITMAP * 480, 220
+DIM Status$ AS STRING * 24
+DIM Missing$ AS STRING * 12
+DIM State AS INTEGER
+DIM Score AS INTEGER
+DIM Lives AS INTEGER
+DIM Left AS INTEGER
+DIM Ticks AS INTEGER
+DIM Painted AS BOOLEAN
+DIM Ready AS BOOLEAN
+DIM Built AS BOOLEAN
+DIM I AS INTEGER
+' the hero
+DIM HX AS INTEGER
+DIM HY AS INTEGER
+DIM VY AS INTEGER
+DIM Facing AS INTEGER
+DIM OnGround AS BOOLEAN
+DIM JumpHeld AS BOOLEAN
+DIM JumpPress AS BOOLEAN
+DIM Safe AS INTEGER
+' the scenery
+DIM PlatX(7) AS INTEGER
+DIM PlatY(7) AS INTEGER
+DIM PlatW(7) AS INTEGER
+DIM CoinX(7) AS INTEGER
+DIM CoinY(7) AS INTEGER
+DIM CoinOn(7) AS BOOLEAN
+DIM BugLo(2) AS INTEGER
+DIM BugHi(2) AS INTEGER
+DIM BugV(2) AS INTEGER
+' what is on the screen: each sprite as last drawn, the coins' phase
+DIM DrawnX(3) AS INTEGER
+DIM DrawnY(3) AS INTEGER
+DIM DrawnF(3) AS INTEGER
+DIM Drawn(3) AS BOOLEAN
+DIM Moved(3) AS BOOLEAN
+DIM Again(3) AS BOOLEAN
+DIM CoinGone(7) AS BOOLEAN
+DIM CoinPhase AS INTEGER
+
+WINDOW Main, "JUMPER", LARGE
+LABEL Status$
+CANVAS 480, 220, PAINT Paint, KEYS Keys
+BUTTON "New game", NewGame
+BUTTON "Pause", TogglePause
+BUTTON "Quit", Quit
+TIMER Update, EVERY 2 TICKS
+
+' ---------------------------------------------------------------- the level
+
+SUB Plat(I AS INTEGER, X AS INTEGER, Y AS INTEGER, W AS INTEGER)
+    PlatX(I) = X
+    PlatY(I) = Y
+    PlatW(I) = W
+END SUB
+
+SUB CoinAt(I AS INTEGER, X AS INTEGER, Y AS INTEGER)
+    CoinX(I) = X
+    CoinY(I) = Y
+END SUB
+
+' A beetle walks on a platform (or the ground) between Lo and Hi.
+SUB BugAt(I AS INTEGER, Lo AS INTEGER, Hi AS INTEGER, Y AS INTEGER, V AS INTEGER)
+    BugLo(I) = Lo
+    BugHi(I) = Hi
+    SprY(PLAYER + I) = Y
+    BugV(I) = V
+END SUB
+
+' The level: platforms (x, top, width; the last one is the ground), the
+' coins, and the beetles' walks.
+SUB Level
+    CALL Plat(1, 40, 164, 90)
+    CALL Plat(2, 180, 128, 100)
+    CALL Plat(3, 330, 154, 110)
+    CALL Plat(4, 80, 90, 80)
+    CALL Plat(5, 240, 60, 90)
+    CALL Plat(6, 400, 100, 60)
+    CALL Plat(7, 0, GROUND, CW)
+    CALL CoinAt(1, 80, 152)
+    CALL CoinAt(2, 226, 116)
+    CALL CoinAt(3, 380, 142)
+    CALL CoinAt(4, 116, 78)
+    CALL CoinAt(5, 281, 48)
+    CALL CoinAt(6, 426, 88)
+    CALL CoinAt(7, 300, 192)
+    CALL BugAt(1, 180, 264, 116, 2)
+    CALL BugAt(2, 160, 460, 192, 3)
+END SUB
+
+' The scenery on the canvas (no sprites), then kept in Back.
+SUB DrawScenery
+    LOCAL I AS INTEGER
+    DRAW CLEAR
+    FOR I = 0 TO 7
+        DRAW PIXEL 30 + I * 60, 20 + (I MOD 3) * 9
+        DRAW PIXEL 51 + I * 60, 34 - (I MOD 2) * 11
+    NEXT I
+    FOR I = 1 TO PLATFORMS
+        IF PlatY(I) = GROUND THEN
+            DRAW FILL PlatX(I), PlatY(I), PlatW(I), CH - GROUND, 5
+            DRAW LINE PlatX(I), PlatY(I), PlatX(I) + PlatW(I) - 1, PlatY(I)
+        ELSE
+            DRAW FILL PlatX(I), PlatY(I), PlatW(I), 6, 3
+            DRAW BOX PlatX(I), PlatY(I), PlatW(I), 6
+        END IF
+    NEXT I
+    BITMAP GET Back, 0, 0, CW, CH
+END SUB
+
+SUB DrawCoins
+    LOCAL I AS INTEGER
+    FOR I = 1 TO COINS
+        IF CoinOn(I) THEN
+            CALL SpriteDraw(Coin, CoinM, CoinX(I), CoinY(I), (Ticks / 4 + I) MOD 2, 8, 8)
+        END IF
+    NEXT I
+END SUB
+
+' A message in a box in the middle of the canvas.
+SUB Banner(T$ AS STRING, U$ AS STRING)
+    LOCAL W AS INTEGER
+    W = MAX(TEXTWIDTH(T$), TEXTWIDTH(U$)) + 24
+    DRAW FILL (CW - W) / 2, 70, W, 48, 8
+    DRAW BOX (CW - W) / 2, 70, W, 48
+    DRAW BOX (CW - W) / 2 + 2, 72, W - 4, 44
+    DRAW TEXT (CW - TEXTWIDTH(T$)) / 2, 78, T$
+    DRAW TEXT (CW - TEXTWIDTH(U$)) / 2, 96, U$
+END SUB
+
+SUB ShowStatus
+    SELECT CASE State
+    CASE TITLE
+        Status$ = "JUMPER: New game to play"
+    CASE PAUSED
+        Status$ = "Paused: P to go on"
+    CASE ELSE
+        Status$ = "Score " + STR$(Score) + " Lives " + STR$(Lives) + " Left " + STR$(Left)  ' 24 at most
+    END SELECT
+END SUB
+
+' Everything as it is now: scenery, coins, sprites, and the banner of the
+' state (the PAINT handler, and after a new game or a life lost).
+SUB Paint
+    Painted = TRUE
+    IF NOT Ready THEN
+        DRAW CLEAR
+        DRAW TEXT 20, 20, "JUMPER needs " + Missing$ + " (examples/assets)"
+        EXIT SUB
+    END IF
+    IF NOT Built THEN  ' the first time: draw the scenery and keep it
+        CALL DrawScenery
+        Built = TRUE
+    END IF
+    BITMAP PUT Back, 0, 0
+    CALL DrawCoins
+    CALL ShowSprites
+    CoinPhase = Ticks / 4
+    SELECT CASE State
+    CASE TITLE
+        CALL Banner("JUMPER", "New game: arrows run, Space jumps")
+    CASE PAUSED
+        CALL Banner("Paused", "P to go on")
+    CASE WON
+        CALL Banner("Every coin! Score " + STR$(Score), "New game to play again")
+    CASE OVER
+        CALL Banner("Game over. Score " + STR$(Score), "New game to try again")
+    END SELECT
+END SUB
+
+' ---------------------------------------------------------------- sprites
+
+' Slot I drawn as it is now, and noted as drawn there.
+SUB ShowOne(I AS INTEGER)
+    IF I = PLAYER THEN
+        CALL SpriteShow(Hero, HeroM, I)
+    ELSE
+        CALL SpriteShow(Bug, BugM, I)
+    END IF
+    DrawnX(I) = SprX(I)
+    DrawnY(I) = SprY(I)
+    DrawnF(I) = SprF(I)
+    Drawn(I) = TRUE
+END SUB
+
+SUB ShowSprites
+    LOCAL I AS INTEGER
+    FOR I = 1 TO BUGS
+        CALL ShowOne(PLAYER + I)
+    NEXT I
+    CALL ShowOne(PLAYER)
+END SUB
+
+' Whether slot I, as it is now or as it was drawn, meets X, Y, W, H.
+FUNCTION Touches(I AS INTEGER, X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER) AS BOOLEAN
+    IF GeomMeets(SprX(I), SprY(I), SprW(I), SprH(I), X, Y, W, H) THEN
+        RETURN TRUE
+    END IF
+    RETURN Drawn(I) AND GeomMeets(DrawnX(I), DrawnY(I), SprW(I), SprH(I), X, Y, W, H)
+END FUNCTION
+
+' After the steps: draw again only what changed. 1: the background goes
+' back where a sprite that moved was. 2: a coin is drawn again when the
+' coins turn, or when a sprite's old place met it; a collected coin is
+' taken away. 3: every sprite that moved, or that a put-back background
+' or a coin drawn again met, is drawn, back to front. Sprites are off the
+' screen only between 1 and 3, a few milliseconds.
+SUB Render
+    LOCAL I AS INTEGER
+    LOCAL J AS INTEGER
+    LOCAL K AS INTEGER
+    LOCAL Turn AS BOOLEAN
+    LOCAL Redo AS BOOLEAN
+    FOR I = 1 TO 1 + BUGS
+        Moved(I) = NOT Drawn(I) OR DrawnX(I) <> SprX(I) OR DrawnY(I) <> SprY(I) OR DrawnF(I) <> SprF(I)
+        Again(I) = Moved(I)
+        IF Moved(I) AND Drawn(I) THEN
+            CALL SpriteBack(Back, DrawnX(I), DrawnY(I), SprW(I), SprH(I))
+        END IF
+    NEXT I
+    Turn = CoinPhase <> Ticks / 4
+    CoinPhase = Ticks / 4
+    FOR J = 1 TO COINS
+        Redo = FALSE
+        IF CoinGone(J) THEN
+            CALL SpriteBack(Back, CoinX(J), CoinY(J), 8, 8)
+            CoinGone(J) = FALSE
+            Redo = TRUE
+        ELSE
+            IF CoinOn(J) THEN
+                Redo = Turn
+                FOR I = 1 TO 1 + BUGS
+                    IF Moved(I) AND Drawn(I) THEN
+                        IF GeomMeets(DrawnX(I), DrawnY(I), SprW(I), SprH(I), CoinX(J), CoinY(J), 8, 8) THEN
+                            Redo = TRUE
+                        END IF
+                    END IF
+                NEXT I
+                IF Redo THEN
+                    CALL SpriteDraw(Coin, CoinM, CoinX(J), CoinY(J), (Ticks / 4 + J) MOD 2, 8, 8)
+                END IF
+            END IF
+        END IF
+        IF Redo THEN
+            FOR I = 1 TO 1 + BUGS
+                IF Touches(I, CoinX(J), CoinY(J), 8, 8) THEN
+                    Again(I) = TRUE
+                END IF
+            NEXT I
+        END IF
+    NEXT J
+    FOR I = 1 TO 1 + BUGS  ' a sprite under one that moved lost pixels too
+        IF Moved(I) THEN
+            FOR K = 1 TO 1 + BUGS
+                IF K <> I AND Drawn(I) THEN
+                    IF Touches(K, DrawnX(I), DrawnY(I), SprW(I), SprH(I)) THEN
+                        Again(K) = TRUE
+                    END IF
+                END IF
+            NEXT K
+        END IF
+    NEXT I
+    FOR I = 1 TO BUGS
+        IF Again(PLAYER + I) THEN
+            CALL ShowOne(PLAYER + I)
+        END IF
+    NEXT I
+    IF Again(PLAYER) THEN
+        CALL ShowOne(PLAYER)
+    END IF
+END SUB
+
+' The hero's frame: 0 standing, 1 and 2 running (in turn), 3 in the air;
+' 4..7 the same facing left.
+FUNCTION HeroFrame(Moving AS BOOLEAN) AS INTEGER
+    LOCAL F AS INTEGER
+    IF NOT OnGround THEN
+        F = 3
+    ELSE
+        IF Moving THEN
+            F = 1 + Ticks MOD 2
+        END IF
+    END IF
+    IF Facing < 0 THEN
+        F = F + 4
+    END IF
+    RETURN F
+END FUNCTION
+
+' ---------------------------------------------------------------- the game
+
+SUB Respawn
+    HX = 12
+    HY = GROUND - HH
+    VY = 0
+    Facing = 1
+    OnGround = TRUE
+    Safe = 16  ' two seconds when no beetle can hurt
+    SprX(PLAYER) = HX
+    SprY(PLAYER) = HY
+    SprF(PLAYER) = 0
+END SUB
+
+SUB NewGame
+    LOCAL I AS INTEGER
+    IF NOT Ready THEN
+        EXIT SUB
+    END IF
+    Score = 0
+    Lives = 3
+    Left = COINS
+    FOR I = 1 TO COINS
+        CoinOn(I) = TRUE
+    NEXT I
+    FOR I = 1 TO BUGS
+        SprX(PLAYER + I) = BugLo(I)
+        SprF(PLAYER + I) = 0
+        BugV(I) = ABS(BugV(I))
+    NEXT I
+    CALL Respawn
+    State = PLAYING
+    JumpPress = FALSE
+    JumpHeld = FALSE
+    CALL PaceStart(STEPTICKS, CATCHUP)
+    CALL ShowStatus
+    IF Painted THEN
+        CALL Paint
+    END IF
+END SUB
+
+SUB TogglePause
+    IF State = PLAYING THEN
+        State = PAUSED
+    ELSE
+        IF State = PAUSED THEN
+            State = PLAYING
+            CALL PaceStart(STEPTICKS, CATCHUP)  ' the time paused is not caught up
+        END IF
+    END IF
+    CALL ShowStatus
+    CALL Paint
+END SUB
+
+' A press of Space or Up is kept for the next step, so that a tap shorter
+' than a step still jumps; the repeats of a key held down are not presses.
+SUB Keys
+    SELECT CASE KEYCODE
+    CASE 32, KC_UP
+        IF NOT JumpHeld THEN
+            JumpPress = TRUE
+        END IF
+    CASE 80, 112
+        CALL TogglePause
+    CASE KC_STOP
+        CALL Quit
+    END SELECT
+END SUB
+
+' The top of the platform under a hero at X whose feet go from Y0 down to
+' Y1 (or are at Y1 already), or -1: feet are the middle 8 of the 16 pixels.
+FUNCTION Landing(X AS INTEGER, Y0 AS INTEGER, Y1 AS INTEGER) AS INTEGER
+    LOCAL I AS INTEGER
+    LOCAL Best AS INTEGER
+    Best = -1
+    FOR I = 1 TO PLATFORMS
+        IF X + 12 > PlatX(I) AND X + 4 < PlatX(I) + PlatW(I) THEN
+            IF Y0 <= PlatY(I) AND Y1 >= PlatY(I) THEN
+                IF Best < 0 OR PlatY(I) < Best THEN
+                    Best = PlatY(I)
+                END IF
+            END IF
+        END IF
+    NEXT I
+    RETURN Best
+END FUNCTION
+
+' One step of the hero: run, jump, fall, land.
+SUB MoveHero
+    LOCAL D AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL Top AS INTEGER
+    LOCAL Up AS BOOLEAN
+    D = KeyAxis(SC_LEFT, SC_RIGHT)
+    IF D <> 0 THEN
+        Facing = D
+    END IF
+    HX = GeomClamp(HX + D * RUN, 0, CW - HW)
+    Up = KEYDOWN(SC_SPACE) OR KEYDOWN(SC_UP)
+    IF (JumpPress OR (Up AND NOT JumpHeld)) AND OnGround THEN
+        VY = -JUMP
+        OnGround = FALSE
+    END IF
+    JumpHeld = Up
+    JumpPress = FALSE
+    IF OnGround THEN  ' still standing on something? (it may have run off an edge)
+        Top = Landing(HX, HY + HH, HY + HH)
+        IF Top < 0 THEN
+            OnGround = FALSE
+            VY = 0
+        END IF
+    END IF
+    IF NOT OnGround THEN
+        Y = HY + VY
+        IF VY > 0 THEN  ' falling: land on the first platform the feet pass
+            Top = Landing(HX, HY + HH, Y + HH)
+            IF Top >= 0 THEN
+                Y = Top - HH
+                VY = 0
+                OnGround = TRUE
+            END IF
+        END IF
+        IF Y < 0 THEN
+            Y = 0
+            VY = 0
+        END IF
+        HY = Y
+        IF NOT OnGround THEN
+            VY = MIN(VY + GRAVITY, FALLMAX)
+        END IF
+    END IF
+    SprX(PLAYER) = HX
+    SprY(PLAYER) = HY
+    SprF(PLAYER) = HeroFrame(D <> 0)
+END SUB
+
+SUB MoveBugs
+    LOCAL I AS INTEGER
+    LOCAL X AS INTEGER
+    FOR I = 1 TO BUGS
+        X = SprX(PLAYER + I) + BugV(I)
+        IF X < BugLo(I) OR X > BugHi(I) THEN
+            BugV(I) = -BugV(I)
+            X = SprX(PLAYER + I) + BugV(I)
+        END IF
+        SprX(PLAYER + I) = X
+        SprF(PLAYER + I) = (Ticks / 2) MOD 2
+    NEXT I
+END SUB
+
+' Coins the hero touches, and beetles.
+SUB Collide
+    LOCAL I AS INTEGER
+    LOCAL Hit AS BOOLEAN
+    FOR I = 1 TO COINS
+        IF CoinOn(I) THEN
+            Hit = SpriteHitsRect(PLAYER, CoinX(I), CoinY(I), 8, 8)
+            IF Hit THEN
+                CoinOn(I) = FALSE
+                CoinGone(I) = TRUE
+                Score = Score + 10
+                Left = Left - 1
+            END IF
+        END IF
+    NEXT I
+    IF Left = 0 THEN
+        State = WON
+        Score = Score + 10 * Lives
+        EXIT SUB
+    END IF
+    IF Safe > 0 THEN
+        Safe = Safe - 1
+        EXIT SUB
+    END IF
+    FOR I = 1 TO BUGS  ' a beetle: the hero's body (inset 3 pixels) against its shell
+        Hit = SpriteHitsRect(PLAYER + I, HX + 3, HY + 3, HW - 6, HH - 3)
+        IF Hit THEN
+            Lives = Lives - 1
+            IF Lives = 0 THEN
+                State = OVER
+            ELSE
+                CALL Respawn
+            END IF
+            EXIT SUB
+        END IF
+    NEXT I
+END SUB
+
+' Each TIMER event: the steps of 1/8 s due since the last one, then the
+' changes drawn once.
+SUB Update
+    LOCAL N AS INTEGER
+    IF State <> PLAYING OR NOT Painted THEN
+        EXIT SUB
+    END IF
+    N = PaceSteps()
+    IF N = 0 THEN
+        EXIT SUB
+    END IF
+    WHILE N > 0 AND State = PLAYING
+        Ticks = (Ticks + 1) MOD 1024
+        CALL MoveHero
+        CALL MoveBugs
+        CALL Collide
+        N = N - 1
+    WEND
+    IF State <> PLAYING THEN  ' won or lost: the last picture and the banner
+        CALL ShowStatus
+        CALL Paint
+        EXIT SUB
+    END IF
+    CALL Render
+    CALL ShowStatus
+END SUB
+
+SUB Quit
+    TIMER OFF
+    EXIT
+END SUB
+
+' ---------------------------------------------------------------- start
+
+' A picture just loaded: TRUE if it was read and has the size the game
+' draws from (Size); otherwise Missing$ names it.
+FUNCTION Loaded(N$ AS STRING, Size AS BOOLEAN) AS BOOLEAN
+    IF IOERR <> 0 OR NOT Size THEN
+        Missing$ = N$
+        RETURN FALSE
+    END IF
+    RETURN TRUE
+END FUNCTION
+
+SprCW = CW
+SprCH = CH
+FOR I = 1 TO 1 + BUGS
+    SprW(I) = HW
+    SprH(I) = 12
+NEXT I
+SprH(PLAYER) = HH
+CALL Level
+FOR I = 1 TO BUGS
+    SprX(PLAYER + I) = BugLo(I)
+NEXT I
+' Each picture is loaded, then checked; after the first one missing, the
+' checks are skipped (short-circuit AND), so Missing$ names that one.
+Ready = TRUE
+BITMAP LOAD Hero, "JHERO.PBI"
+Ready = Ready AND Loaded("JHERO.PBI", BITMAPW(Hero) = 16 AND BITMAPH(Hero) = 192)
+BITMAP LOAD HeroM, "JHEROM.PBI"
+Ready = Ready AND Loaded("JHEROM.PBI", BITMAPW(HeroM) = 16 AND BITMAPH(HeroM) = 192)
+BITMAP LOAD Bug, "JBUG.PBI"
+Ready = Ready AND Loaded("JBUG.PBI", BITMAPW(Bug) = 16 AND BITMAPH(Bug) = 24)
+BITMAP LOAD BugM, "JBUGM.PBI"
+Ready = Ready AND Loaded("JBUGM.PBI", BITMAPW(BugM) = 16 AND BITMAPH(BugM) = 24)
+BITMAP LOAD Coin, "JCOIN.PBI"
+Ready = Ready AND Loaded("JCOIN.PBI", BITMAPW(Coin) = 8 AND BITMAPH(Coin) = 16)
+BITMAP LOAD CoinM, "JCOINM.PBI"
+Ready = Ready AND Loaded("JCOINM.PBI", BITMAPW(CoinM) = 8 AND BITMAPH(CoinM) = 16)
+CALL Respawn
+State = TITLE
+CALL ShowStatus
+END

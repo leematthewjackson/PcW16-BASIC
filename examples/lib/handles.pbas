@@ -1,0 +1,150 @@
+' handles.pbas: selection handles on a rectangle, and resizing by
+' dragging one. INCLUDE "lib/handles.pbas" near the top of a program with a
+' CANVAS. docs/libraries/handles.md.
+'
+' Handles are small squares (HandleSize pixels, default 5) on the four
+' corners and the middle of each side of a rectangle, numbered clockwise:
+'     1 --- 2 --- 3
+'     8           4
+'     7 --- 6 --- 5
+' The program sets HandleCW, HandleCH to its canvas's size (once).
+'   SUB HandlesShow(X, Y, W, H)  draw the handles of X, Y, W, H (inverted,
+'                       so drawing them again erases them; clipped to the
+'                       canvas); first erases the ones shown before
+'   SUB HandlesHide     erase the handles shown
+'   FUNCTION HandleAt(MX, MY, X, Y, W, H) AS INTEGER
+'                       the handle of X, Y, W, H under the pixel MX, MY:
+'                       1..8, or 0 (a pixel of the rectangle itself is 0)
+'   SUB HandleResize(K, DX, DY, X, Y, W, H, MinW, MinH)
+'                       the rectangle after handle K is moved by DX, DY:
+'                       the sides it does not touch stay where they are,
+'                       and it is never smaller than MinW x MinH;
+'                       in HandX, HandY, HandW, HandH
+'   FUNCTION HandleOn AS BOOLEAN   handles are shown now
+' Names: everything here starts with Handle or Hand.
+DIM HandleSize AS INTEGER
+DIM HandleCW AS INTEGER
+DIM HandleCH AS INTEGER
+DIM HandleShown AS BOOLEAN
+DIM HandleSX AS INTEGER
+DIM HandleSY AS INTEGER
+DIM HandleSW AS INTEGER
+DIM HandleSH AS INTEGER
+DIM HandX AS INTEGER
+DIM HandY AS INTEGER
+DIM HandW AS INTEGER
+DIM HandH AS INTEGER
+DIM HandlePX AS INTEGER
+DIM HandlePY AS INTEGER
+
+' The centre of handle K of X, Y, W, H, in HandlePX, HandlePY.
+SUB HandlePos(K AS INTEGER, X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    SELECT CASE K
+    CASE 1, 7, 8
+        HandlePX = X
+    CASE 2, 6
+        HandlePX = X + (W - 1) / 2
+    CASE ELSE
+        HandlePX = X + W - 1
+    END SELECT
+    SELECT CASE K
+    CASE 1, 2, 3
+        HandlePY = Y
+    CASE 4, 8
+        HandlePY = Y + (H - 1) / 2
+    CASE ELSE
+        HandlePY = Y + H - 1
+    END SELECT
+END SUB
+
+' One handle inverted (clipped to the canvas).
+SUB HandleFlip(K AS INTEGER)
+    LOCAL S AS INTEGER
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL R AS INTEGER
+    LOCAL B AS INTEGER
+    S = HandleSize
+    CALL HandlePos(K, HandleSX, HandleSY, HandleSW, HandleSH)
+    X = MAX(HandlePX - S / 2, 0)
+    Y = MAX(HandlePY - S / 2, 0)
+    R = MIN(HandlePX - S / 2 + S, HandleCW)
+    B = MIN(HandlePY - S / 2 + S, HandleCH)
+    IF R > X AND B > Y THEN
+        DRAW INVERT X, Y, R - X, B - Y
+    END IF
+END SUB
+
+SUB HandlesFlipAll
+    LOCAL K AS INTEGER
+    FOR K = 1 TO 8
+        CALL HandleFlip(K)
+    NEXT K
+END SUB
+
+SUB HandlesHide
+    IF HandleShown THEN
+        CALL HandlesFlipAll
+    END IF
+    HandleShown = FALSE
+END SUB
+
+SUB HandlesShow(X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    CALL HandlesHide
+    IF HandleSize <= 0 THEN
+        HandleSize = 5
+    END IF
+    HandleSX = X
+    HandleSY = Y
+    HandleSW = MAX(W, 1)
+    HandleSH = MAX(H, 1)
+    CALL HandlesFlipAll
+    HandleShown = TRUE
+END SUB
+
+FUNCTION HandleOn AS BOOLEAN
+    RETURN HandleShown
+END FUNCTION
+
+FUNCTION HandleAt(MX AS INTEGER, MY AS INTEGER, X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER) AS INTEGER
+    LOCAL K AS INTEGER
+    LOCAL S AS INTEGER
+    IF HandleSize <= 0 THEN
+        HandleSize = 5
+    END IF
+    S = HandleSize / 2 + 1
+    FOR K = 1 TO 8
+        CALL HandlePos(K, X, Y, MAX(W, 1), MAX(H, 1))
+        IF ABS(MX - HandlePX) < S AND ABS(MY - HandlePY) < S THEN
+            RETURN K
+        END IF
+    NEXT K
+    RETURN 0
+END FUNCTION
+
+SUB HandleResize(K AS INTEGER, DX AS INTEGER, DY AS INTEGER, X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER, MinW AS INTEGER, MinH AS INTEGER)
+    LOCAL L AS INTEGER
+    LOCAL T AS INTEGER
+    LOCAL R AS INTEGER
+    LOCAL B AS INTEGER
+    L = X
+    T = Y
+    R = X + W
+    B = Y + H
+    SELECT CASE K
+    CASE 1, 7, 8
+        L = MIN(X + DX, R - MinW)
+    CASE 3, 4, 5
+        R = MAX(R + DX, L + MinW)
+    END SELECT
+    SELECT CASE K
+    CASE 1, 2, 3
+        T = MIN(Y + DY, B - MinH)
+    CASE 5, 6, 7
+        B = MAX(B + DY, T + MinH)
+    END SELECT
+    HandX = L
+    HandY = T
+    HandW = R - L
+    HandH = B - T
+END SUB

@@ -1,0 +1,66 @@
+' Shopping list (M6 Phase 2 example): a LIST shows a STRING array. Type an
+' item and press Add; pick an item to see it; ACTION Toggle ticks it ("[x]")
+' on a double-click, which XAnne never reports (KI-25); Remove closes gaps.
+DIM Items$(20) AS STRING
+DIM Count AS INTEGER
+DIM I AS INTEGER
+DIM Entry$ AS STRING
+DIM Status$ AS STRING
+WINDOW "Shopping list", LARGE
+LIST Pick, Items$, Count, ROWS 8, CHANGE Picked, ACTION Toggle
+TEXTBOX Entry$, "New item"
+LABEL Status$
+BUTTON "Add", AddItem, DEFAULT
+BUTTON "Remove", RemoveItem
+BUTTON "Quit", Finish, KEY STOP
+SUB Picked
+    Status$ = "Item " + STR$(Pick) + " of " + STR$(Count)
+END SUB
+SUB Toggle
+    IF LEFT$(Items$(Pick), 3) = "[x]" THEN
+        Items$(Pick) = MID$(Items$(Pick), 5, LEN(Items$(Pick)) - 4)
+    ELSE
+        Items$(Pick) = "[x] " + Items$(Pick)
+    END IF
+END SUB
+SUB AddItem
+    IF LEN(Entry$) = 0 THEN
+        Status$ = "Type an item first"
+        EXIT SUB
+    END IF
+    IF LEN(Entry$) > 20 THEN
+        Status$ = "At most 20 characters"
+        EXIT SUB
+    END IF
+    IF Count = 20 THEN
+        Status$ = "The list is full"
+        EXIT SUB
+    END IF
+    Count = Count + 1
+    Items$(Count) = Entry$
+    Pick = Count
+    Entry$ = ""
+    Status$ = "Added item " + STR$(Count)
+END SUB
+SUB RemoveItem
+    IF Pick = 0 THEN
+        Status$ = "Pick an item first"
+        EXIT SUB
+    END IF
+    FOR I = Pick TO Count - 1
+        Items$(I) = Items$(I + 1)
+    NEXT I
+    Items$(Count) = ""
+    Count = Count - 1
+    Pick = 0
+    Status$ = STR$(Count) + " items left"
+END SUB
+SUB Finish
+    EXIT
+END SUB
+Items$(1) = "Bread"
+Items$(2) = "Milk"
+Items$(3) = "Apples"
+Count = 3
+Status$ = "Pick or add an item"
+END

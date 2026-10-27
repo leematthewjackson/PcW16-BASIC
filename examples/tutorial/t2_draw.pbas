@@ -1,0 +1,69 @@
+' Tutorial 2: a canvas you draw boxes on by dragging, with an icon palette.
+INCLUDE "../lib/geom.pbas"
+INCLUDE "../lib/drag.pbas"
+INCLUDE "../lib/toolbar.pbas"
+
+DIM Icons AS BITMAP * 24, 48
+DIM Status$ AS STRING * 24
+
+WINDOW Main, "DRAW", LARGE
+LABEL Status$
+CANVAS 400, 200, PAINT Paint, MOUSE Mouse
+BUTTON "Clear", ClearAll
+BUTTON "Quit", Quit
+
+SUB Paint
+    DRAW CLEAR
+    CALL ToolPaint(Icons)
+    DRAW LINE 0, 30, 399, 30
+END SUB
+
+SUB Mouse
+    LOCAL T AS INTEGER
+    CALL DragMouse
+    IF DragEvent = 1 AND DragY < 30 THEN
+        T = ToolAt(DragX, DragY)
+        IF T > 0 THEN
+            CALL ToolPick(Icons, T)
+        END IF
+        CALL DragCancel
+        EXIT SUB
+    END IF
+    SELECT CASE DragEvent
+    CASE 2
+        CALL DragShowBox
+    CASE 3
+        CALL DragHide
+        CALL GeomSpan(DragX0, MAX(DragY0, 31), DragX, MAX(DragY, 31))
+        IF ToolSel = 1 THEN
+            DRAW BOX GeomX, GeomY, GeomW, GeomH
+        ELSE
+            DRAW FILL GeomX, GeomY, GeomW, GeomH, 2
+        END IF
+        Status$ = STR$(GeomW) + " x " + STR$(GeomH)
+    END SELECT
+END SUB
+
+SUB ClearAll
+    CALL Paint
+    Status$ = "Cleared"
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+
+DragW = 400
+DragH = 200
+ToolN = 2
+ToolSize = 24
+ToolX = 4
+ToolY = 3
+ToolSel = 1
+BITMAP LOAD Icons, "T2ICONS.PBI"
+IF IOERR <> 0 THEN
+    Status$ = "T2ICONS.PBI is missing"
+ELSE
+    Status$ = "Drag to draw"
+END IF
+END

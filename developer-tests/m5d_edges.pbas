@@ -1,0 +1,46 @@
+' M5d XAnne edge cases: six buttons (both rows, first and last positions),
+' a label switching between a 47-character text (the M5d limit; since the
+' M5d repair the limit is 24, so "1 Long" now ends the program with an
+' error), short or empty text, a label that keeps its old value while an
+' alert is showing, a DEFAULT button not the first, a value too long.
+DIM Shown$ AS STRING
+DIM Last$ AS STRING
+DIM Count AS INTEGER
+Shown$ = "Ready"
+Last$ = "No button pressed yet"
+WINDOW "M5d edges"
+LABEL "Label tests: long, short, empty"
+LABEL Shown$
+LABEL Last$
+BUTTON "1 Long", Long
+BUTTON "2 Short", Short
+BUTTON "3 Empty", Empty
+BUTTON "4 Count", Counter
+BUTTON "5 Default", Fifth, DEFAULT
+BUTTON "6 Too long", TooLong
+SUB Long
+    Shown$ = "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"
+    Last$ = "Last: 1 (" + STR$(LEN(Shown$)) + " characters)"
+END SUB
+SUB Short
+    Shown$ = "ok"
+    Last$ = "Last: 2"
+END SUB
+SUB Empty
+    Shown$ = ""
+    Last$ = "Last: 3 (the line above is empty)"
+END SUB
+SUB Counter
+    Count = Count + 1
+    Shown$ = "Count " + STR$(Count)
+    MESSAGE "Count is now " + STR$(Count) + "; the window updates after OK"
+    Last$ = "Last: 4"
+END SUB
+SUB Fifth
+    Last$ = "Last: 5 (the DEFAULT button)"
+END SUB
+SUB TooLong
+    Shown$ = "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"
+    Last$ = "Last: 6"
+END SUB
+END

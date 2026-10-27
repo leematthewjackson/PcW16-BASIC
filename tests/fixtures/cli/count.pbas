@@ -1,0 +1,9 @@
+' Test fixture for the check command (M14): typed arithmetic and a conditional.
+DIM Count AS INTEGER
+Count = 2 + 3 * 4
+IF Count > 10 THEN
+    MESSAGE "Count is above ten"
+ELSE
+    MESSAGE "Count is ten or less"
+END IF
+END

@@ -1,0 +1,5 @@
+' Test fixture (M14): a STRING variable, for --string-capacity.
+DIM Note$ AS STRING
+Note$ = "hello"
+FILESAVE "NOTE.TXT", Note$
+END

@@ -1,0 +1,132 @@
+' M7 edge cases for owner XAnne testing (docs/M7-ACCEPTANCE.md, M1).
+' Main line only: each alert shows what happened and, in brackets, what
+' is expected. Dismiss each alert to reach the next; the last one is a
+' deliberate REAL runtime error, after which the program exits.
+' Files: creates, renames and deletes M7EDGE.TMP / M7EDGE2.TMP in its
+' folder (deleting any old copies first). No other file is touched.
+CONST LIMIT = 10
+CONST STRIDE = 3
+DIM S$ AS STRING
+DIM T$ AS STRING
+DIM I AS INTEGER
+DIM N AS INTEGER
+DIM X AS REAL
+DIM Lines$(3) AS STRING
+
+FUNCTION Square(V AS INTEGER) AS INTEGER
+    RETURN V * V
+END FUNCTION
+
+FUNCTION Grade$(Score AS INTEGER) AS STRING
+    SELECT CASE Score
+    CASE IS >= 90
+        RETURN "A"
+    CASE 70 TO 89
+        RETURN "B"
+    CASE 50, 60
+        RETURN "C"
+    CASE ELSE
+        RETURN "F"
+    END SELECT
+END FUNCTION
+
+SUB Report(Got$, Want$)
+    MESSAGE Got$ + " [" + Want$ + "]"
+END SUB
+
+' E1 procedures, functions, SELECT CASE, STEP, EXIT FOR
+N = 0
+FOR I = 1 TO LIMIT STEP STRIDE
+    N = N + Square(I)
+NEXT I
+S$ = STR$(N) + " " + Grade$(95) + Grade$(75) + Grade$(60) + Grade$(10)
+FOR I = 1 TO 100
+    IF I * I > 50 THEN
+        EXIT FOR
+    END IF
+NEXT I
+CALL Report("E1: " + S$ + " " + STR$(I), "166 ABCF 8")
+
+' E2 REAL arithmetic and STR$
+X = 1.0 / 3
+S$ = STR$(X) + " " + STR$(SQR(2.0)) + " " + STR$(PI) + " " + STR$(2 ^ 10)
+CALL Report("E2: " + S$, "0.333333333 1.41421356 3.14159265 1024")
+
+' E3 REAL functions and formatting
+S$ = STR$(SIN(PI / 6)) + " " + STR$(EXP(1.0)) + " " + STR$(LOG(10.0)) + " " + STR$(1E10) + " " + STR$(-0.0001)
+CALL Report("E3: " + S$, "0.5 2.71828183 2.30258509 1E+10 -0.0001")
+
+' E4 REALVAL, ISNUM, CINT, INT, FIX
+S$ = STR$(REALVAL(" -1.5E3")) + " " + STR$(CINT(2.5)) + " " + STR$(INT(-2.5)) + " " + STR$(FIX(-2.5))
+IF ISNUM("12x") THEN
+    S$ = S$ + " yes"
+ELSE
+    S$ = S$ + " no"
+END IF
+CALL Report("E4: " + S$, "-1500 3 -3 -2 no")
+
+' E5 write a file (old test copies removed first; IOERR 2 = was not there)
+KILL "M7EDGE.TMP"
+S$ = STR$(IOERR)
+KILL "M7EDGE2.TMP"
+S$ = S$ + STR$(IOERR) + " /"
+OPEN "M7EDGE.TMP" FOR OUTPUT AS #2
+S$ = S$ + " " + STR$(IOERR)
+PRINT #2, "alpha"
+S$ = S$ + STR$(IOERR)
+PRINT #2, 2.5
+S$ = S$ + STR$(IOERR)
+PRINT #2, -7
+S$ = S$ + STR$(IOERR)
+CLOSE #2
+S$ = S$ + STR$(IOERR)
+CALL Report("E5: " + S$, "0 or 2, 0 or 2 / 00000")
+
+' E6 read it back, with EOF
+OPEN "M7EDGE.TMP" FOR INPUT AS #1
+S$ = STR$(IOERR) + ":"
+N = 0
+WHILE NOT EOF(1)
+    N = N + 1
+    LINE INPUT #1, Lines$(N)
+    S$ = S$ + " " + Lines$(N) + "/" + STR$(IOERR)
+WEND
+LINE INPUT #1, T$
+S$ = S$ + " then " + STR$(IOERR)
+CLOSE #1
+CALL Report("E6: " + S$, "0: alpha/0 2.5/0 -7/0 then 245")
+
+' E7 rename and delete (os_rename_file fn 154, os_delete_file fn 153)
+NAME "M7EDGE.TMP" AS "M7EDGE2.TMP"
+S$ = STR$(IOERR)
+OPEN "M7EDGE.TMP" FOR INPUT AS #1
+S$ = S$ + " " + STR$(IOERR)
+OPEN "M7EDGE2.TMP" FOR INPUT AS #1
+S$ = S$ + " " + STR$(IOERR)
+LINE INPUT #1, T$
+S$ = S$ + " " + T$
+CLOSE #1
+KILL "M7EDGE2.TMP"
+S$ = S$ + " " + STR$(IOERR)
+OPEN "M7EDGE2.TMP" FOR INPUT AS #1
+S$ = S$ + " " + STR$(IOERR)
+CALL Report("E7: " + S$, "0 2 0 alpha 0 2")
+
+' E8 recoverable errors: missing file, unopened channel, busy channel
+OPEN "M7NONE.TMP" FOR INPUT AS #1
+S$ = STR$(IOERR)
+LINE INPUT #2, T$
+S$ = S$ + " " + STR$(IOERR)
+OPEN "M7EDGE.TMP" FOR OUTPUT AS #2
+OPEN "M7EDGE.TMP" FOR OUTPUT AS #2
+S$ = S$ + " " + STR$(IOERR)
+CLOSE
+KILL "M7EDGE.TMP"
+S$ = S$ + " " + STR$(IOERR)
+CALL Report("E8: " + S$, "2 242 241 0")
+
+' E9 a REAL runtime error stops the program with an alert, then it exits
+X = -1
+X = SQR(X)
+MESSAGE "not reached"
+END

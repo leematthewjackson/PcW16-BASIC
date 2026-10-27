@@ -1,0 +1,35 @@
+' Calculator (M5b example): whole-number division typed into two fields.
+' VAL reads the numbers, / and MOD divide, STR$ and concatenation report.
+' Dividing by zero is checked first, so the program never stops on it.
+DIM First$ AS STRING
+DIM Second$ AS STRING
+DIM A AS INTEGER
+DIM B AS INTEGER
+First$ = "100"
+Second$ = "7"
+WINDOW "Calculator"
+TEXTBOX First$, "Number to divide"
+TEXTBOX Second$, "Divide by"
+LABEL "Whole numbers -32768 to 32767"
+BUTTON "Divide", Divide
+BUTTON "Swap", Swap
+BUTTON "Quit", Finish
+SUB Divide
+    A = VAL(First$)
+    B = VAL(Second$)
+    IF B = 0 THEN
+        MESSAGE "Cannot divide " + STR$(A) + " by zero"
+    ELSE
+        MESSAGE STR$(A) + " / " + STR$(B) + " = " + STR$(A / B) + " remainder " + STR$(A MOD B)
+        First$ = STR$(A / B)
+    END IF
+END SUB
+SUB Swap
+    First$ = Second$ + "|" + First$
+    Second$ = MID$(First$, INSTR(First$, "|") + 1, 10)
+    First$ = LEFT$(First$, INSTR(First$, "|") - 1)
+END SUB
+SUB Finish
+    EXIT
+END SUB
+END

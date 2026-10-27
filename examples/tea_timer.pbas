@@ -1,0 +1,64 @@
+' Tea timer (M6 Phase 2 example): a drop-down CHOICE of teas sets a
+' suggested brewing time on a SLIDER (30 to 280 seconds, page step 25);
+' Start counts down with the timer and beeps when the tea is ready.
+DIM Teas$(5) AS STRING
+DIM Times(5) AS INTEGER
+DIM Left AS INTEGER
+DIM Running AS BOOLEAN
+DIM Shown$ AS STRING
+WINDOW "Tea timer", LARGE
+CHOICE Tea, Teas$, 5, "Tea", CHANGE TeaChosen
+SLIDER Brew, MIN 30, MAX 280, "Brewing time", CHANGE TimeMoved
+LABEL Shown$
+BUTTON "Start", StartIt, DEFAULT, KEY GREEN
+BUTTON "Stop", StopIt, KEY RED
+BUTTON "Quit", Finish, KEY STOP
+TIMER Tick, EVERY 1
+SUB TeaChosen
+    Brew = Times(Tea)
+    Shown$ = Teas$(Tea) + ": " + STR$(Brew) + " s"
+END SUB
+SUB TimeMoved
+    Shown$ = "Brew for " + STR$(Brew) + " s"
+END SUB
+SUB StartIt
+    Left = Brew
+    Running = TRUE
+    TIMER ON
+    Shown$ = STR$(Left) + " s to go"
+END SUB
+SUB StopIt
+    Running = FALSE
+    TIMER OFF
+    Shown$ = "Stopped"
+END SUB
+SUB Tick
+    IF Running THEN
+        Left = Left - 1
+        IF Left = 0 THEN
+            Running = FALSE
+            TIMER OFF
+            BEEP
+            Shown$ = "Your tea is ready"
+        ELSE
+            Shown$ = STR$(Left) + " s to go"
+        END IF
+    END IF
+END SUB
+SUB Finish
+    EXIT
+END SUB
+Teas$(1) = "Green"
+Teas$(2) = "White"
+Teas$(3) = "Oolong"
+Teas$(4) = "Black"
+Teas$(5) = "Herbal"
+Times(1) = 120
+Times(2) = 150
+Times(3) = 180
+Times(4) = 240
+Times(5) = 280
+Tea = 4
+Brew = 240
+Shown$ = "Choose a tea"
+END

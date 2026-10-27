@@ -1,0 +1,815 @@
+' SPRITED: a sprite and icon editor for the PcW16.
+'
+' A sprite is 1 to 4 frames of 16 x 16 pixels, each with a mask. The
+' canvas shows, from the left:
+'   Image   the current frame, 8 screen pixels to an image pixel. Click a
+'           cell to change it; keep the button down and drag to paint more
+'           cells the same way (a press on a black cell clears, on a white
+'           one sets). Cells the mask makes transparent are shown grey
+'           (dark grey: black but hidden; light grey: white, hidden).
+'   Mask    the same frame's mask, as BITMAP MASK reads it: white where
+'           the sprite is drawn, black where the background shows.
+'   Frames  every frame at actual size, image and mask side by side; the
+'           bar on the left marks the current frame. Click one to edit it.
+'   Frame   the current frame at actual size, drawn through its mask over
+'           a grey background.
+'   Anim    the frames in turn, four a second (TIMER, EVERY 4 TICKS).
+' Keys on the canvas: 1-4 choose a frame, Left / Right the previous / next
+' one, A adds a frame (a copy of the current one), M makes the mask from
+' the image (black pixels drawn, white ones transparent), F fills the
+' mask (everything drawn), I inverts the image, P pauses the animation,
+' Stop quits. The menus have the same commands, and Ctrl keys for File.
+'
+' Files: type a name of up to 7 letters or digits in the Name field, then
+' File > Save (Ctrl+S) or File > Open (Ctrl+O). NAME.PBI holds the frames
+' one under another (a 16 x 16n PBI1 strip, as pbimage.py sheet makes it)
+' and NAMEM.PBI the mask strip, so the files load straight into
+' lib/sprite.pbas (SpriteDraw(Sheet, Mask, X, Y, F, 16, 16)). Saving keeps
+' the old files as NAME.BAK and NAMEM.BAK (BITMAP SAVE). Open refuses a
+' file that is not a PBI1 strip 16 pixels wide with 1 to 4 frames, or whose
+' mask is missing or another size, and leaves the sprite as it was. New,
+' Open and Quit ask about unsaved changes (lib/app.pbas).
+'
+' How it works: the pixels live in two INTEGER arrays, one 16-bit row per
+' element (bit 15 is the leftmost pixel). There is no statement that sets a
+' pixel inside a BITMAP, so the actual-size frames drawn on the canvas are
+' captured with BITMAP GET into Strip and StripM whenever they changed;
+' those are what the previews draw from and what File > Save writes.
+' Opening a file draws it on the canvas with BITMAP PUT and reads it back
+' with POINT. docs/M13-INDEPENDENT-APP.md.
+' Build with --runtime-banks all (python3 pcw16basic build examples/sprited.pbas chooses it itself)
+INCLUDE "lib/app.pbas"
+INCLUDE "lib/geom.pbas"
+INCLUDE "lib/keys.pbas"
+
+CONST SZ = 16
+CONST ZOOM = 8
+CONST MAXF = 4
+CONST GY = 24
+CONST IGX = 8
+CONST MGX = 152
+CONST STX = 308
+CONST SMX = 332
+CONST STY = 24
+CONST PVX = 384
+CONST ANX = 448
+CONST PVY = 24
+CONST INFOY = 64
+
+DIM Img(64) AS INTEGER
+DIM Msk(64) AS INTEGER
+DIM BitV(16) AS INTEGER
+DIM Strip AS BITMAP * 16, 64
+DIM StripM AS BITMAP * 16, 64
+DIM Tmp AS BITMAP * 16, 64
+DIM TmpM AS BITMAP * 16, 64
+DIM Frames AS INTEGER
+DIM Cur AS INTEGER
+DIM AnimF AS INTEGER
+DIM AnimOn AS BOOLEAN
+DIM Painted AS BOOLEAN
+DIM StripDirty AS BOOLEAN
+DIM Down AS BOOLEAN
+DIM PenLayer AS INTEGER
+DIM PenSet AS BOOLEAN
+DIM LastX AS INTEGER
+DIM LastY AS INTEGER
+DIM Name$ AS STRING * 12
+DIM DocName$ AS STRING * 8
+DIM Base$ AS STRING * 12
+
+WINDOW Main, "SPRITED", LARGE
+LABEL AppStatus$
+TEXTBOX Name$, "Name (up to 7 letters or digits)"
+CANVAS 560, 200, PAINT Paint, MOUSE Mouse, KEYS Keys
+BUTTON "Save", SaveSprite
+BUTTON "Open", OpenSprite
+BUTTON "Quit", Quit
+TIMER Animate, EVERY 4 TICKS
+
+MENU "File"
+    ITEM "New", NewSprite, KEY "N"
+    ITEM "Open", OpenSprite, KEY "O"
+    ITEM "Save", SaveSprite, KEY "S"
+    ITEM "-"
+    ITEM "Quit", Quit, KEY "Q"
+END MENU
+MENU "Frame"
+    ITEM "Next", NextFrame
+    ITEM "Previous", PrevFrame
+    ITEM "Add a copy", AddFrame
+    ITEM "Delete", DeleteFrame
+    ITEM "Clear", ClearFrame
+    ITEM "-"
+    ITEM "Animate", ToggleAnim, TICK AnimOn
+END MENU
+MENU "Mask"
+    ITEM "From image", MaskFromImage, KEY "M"
+    ITEM "Fill", MaskFill
+    ITEM "Invert image", InvertImage
+END MENU
+
+' ---------------------------------------------------------------- pixels
+
+' The array element holding row Y of frame F (0-based frame and row).
+FUNCTION RowAt(F AS INTEGER, Y AS INTEGER) AS INTEGER
+    RETURN F * SZ + Y + 1
+END FUNCTION
+
+' Pixel X, Y of frame F: image black? / mask drawn?
+FUNCTION ImgBit(F AS INTEGER, X AS INTEGER, Y AS INTEGER) AS BOOLEAN
+    RETURN (Img(RowAt(F, Y)) AND BitV(X + 1)) <> 0
+END FUNCTION
+
+FUNCTION MskBit(F AS INTEGER, X AS INTEGER, Y AS INTEGER) AS BOOLEAN
+    RETURN (Msk(RowAt(F, Y)) AND BitV(X + 1)) <> 0
+END FUNCTION
+
+' ---------------------------------------------------------------- status
+
+SUB Show
+    LOCAL D$ AS STRING
+    D$ = DocName$
+    IF LEN(D$) = 0 THEN
+        D$ = "untitled"
+    END IF
+    IF AppDirty THEN
+        D$ = D$ + "*"
+    END IF
+    CALL AppSay(D$ + "  frame " + STR$(Cur + 1) + " of " + STR$(Frames))
+END SUB
+
+SUB Changed
+    CALL AppChanged
+    StripDirty = TRUE
+END SUB
+
+' ---------------------------------------------------------------- drawing
+
+' One cell of the image grid (L = 0) or the mask grid (L = 1).
+SUB DrawCell(L AS INTEGER, X AS INTEGER, Y AS INTEGER)
+    LOCAL S AS INTEGER
+    LOCAL B AS BOOLEAN
+    LOCAL M AS BOOLEAN
+    B = ImgBit(Cur, X, Y)
+    M = MskBit(Cur, X, Y)
+    IF L = 0 THEN
+        IF B THEN
+            S = 0
+            IF NOT M THEN
+                S = 2
+            END IF
+        ELSE
+            S = 8
+            IF NOT M THEN
+                S = 6
+            END IF
+        END IF
+        DRAW FILL IGX + X * ZOOM + 1, GY + Y * ZOOM + 1, ZOOM - 1, ZOOM - 1, S
+    ELSE
+        S = 0
+        IF M THEN
+            S = 8
+        END IF
+        DRAW FILL MGX + X * ZOOM + 1, GY + Y * ZOOM + 1, ZOOM - 1, ZOOM - 1, S
+    END IF
+END SUB
+
+' One pixel of frame F's actual-size image and mask in the frame strips.
+SUB DrawThumbPixel(F AS INTEGER, X AS INTEGER, Y AS INTEGER)
+    IF ImgBit(F, X, Y) THEN
+        DRAW INK BLACK
+    ELSE
+        DRAW INK WHITE
+    END IF
+    DRAW PIXEL STX + X, STY + F * SZ + Y
+    IF MskBit(F, X, Y) THEN
+        DRAW INK WHITE
+    ELSE
+        DRAW INK BLACK
+    END IF
+    DRAW PIXEL SMX + X, STY + F * SZ + Y
+    DRAW INK BLACK
+END SUB
+
+SUB DrawGrids
+    LOCAL I AS INTEGER
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    FOR I = 0 TO SZ
+        DRAW LINE IGX + I * ZOOM, GY, IGX + I * ZOOM, GY + SZ * ZOOM
+        DRAW LINE IGX, GY + I * ZOOM, IGX + SZ * ZOOM, GY + I * ZOOM
+        DRAW LINE MGX + I * ZOOM, GY, MGX + I * ZOOM, GY + SZ * ZOOM
+        DRAW LINE MGX, GY + I * ZOOM, MGX + SZ * ZOOM, GY + I * ZOOM
+    NEXT I
+    FOR Y = 0 TO SZ - 1
+        FOR X = 0 TO SZ - 1
+            CALL DrawCell(0, X, Y)
+            CALL DrawCell(1, X, Y)
+        NEXT X
+    NEXT Y
+END SUB
+
+' Frame F in the strips: its pixels, or grey when there is no such frame.
+SUB DrawThumb(F AS INTEGER)
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    IF F >= Frames THEN
+        DRAW FILL STX, STY + F * SZ, SZ, SZ, 4
+        DRAW FILL SMX, STY + F * SZ, SZ, SZ, 4
+        EXIT SUB
+    END IF
+    DRAW FILL STX, STY + F * SZ, SZ, SZ, 8
+    DRAW FILL SMX, STY + F * SZ, SZ, SZ, 0
+    FOR Y = 0 TO SZ - 1
+        FOR X = 0 TO SZ - 1
+            IF ImgBit(F, X, Y) OR MskBit(F, X, Y) THEN
+                CALL DrawThumbPixel(F, X, Y)
+            END IF
+        NEXT X
+    NEXT Y
+END SUB
+
+SUB DrawMarker
+    DRAW FILL STX - 8, STY, 5, MAXF * SZ, 8
+    DRAW FILL STX - 7, STY + Cur * SZ, 3, SZ, 0
+END SUB
+
+SUB DrawStrips
+    LOCAL F AS INTEGER
+    FOR F = 0 TO MAXF - 1
+        CALL DrawThumb(F)
+    NEXT F
+    CALL DrawMarker
+    StripDirty = TRUE
+END SUB
+
+SUB DrawInfo
+    DRAW FILL PVX, INFOY, 560 - PVX, 16, 8
+    DRAW TEXT PVX, INFOY, "Frame " + STR$(Cur + 1) + " of " + STR$(Frames)
+    IF NOT AnimOn THEN
+        DRAW TEXT ANX + 12, INFOY, "(paused)"
+    END IF
+END SUB
+
+' The strips on the canvas, captured into the bitmaps the previews and
+' File > Save use, if they changed.
+SUB RefreshStrips
+    IF NOT StripDirty THEN
+        EXIT SUB
+    END IF
+    BITMAP GET Strip, STX, STY, SZ, Frames * SZ
+    BITMAP GET StripM, SMX, STY, SZ, Frames * SZ
+    StripDirty = FALSE
+END SUB
+
+' Frame F drawn through its mask over a checkerboard of 8 x 8 squares (so
+' that both black and white pixels of the sprite show), in the box at X.
+SUB DrawPreview(X AS INTEGER, F AS INTEGER)
+    LOCAL I AS INTEGER
+    LOCAL J AS INTEGER
+    FOR J = 0 TO 3
+        FOR I = 0 TO 3
+            IF (I + J) MOD 2 = 0 THEN
+                DRAW FILL X + I * 8, PVY + J * 8, 8, 8, 8
+            ELSE
+                DRAW FILL X + I * 8, PVY + J * 8, 8, 8, 0
+            END IF
+        NEXT I
+    NEXT J
+    BITMAP MASK Strip, StripM, X + 8, PVY + 8, 0, F * SZ, SZ, SZ
+END SUB
+
+SUB RefreshPreviews
+    CALL RefreshStrips
+    CALL DrawPreview(PVX, Cur)
+    IF AnimF >= Frames THEN
+        AnimF = 0
+    END IF
+    CALL DrawPreview(ANX, AnimF)
+END SUB
+
+SUB Paint
+    DRAW CLEAR
+    DRAW TEXT IGX, 4, "Image"
+    DRAW TEXT MGX, 4, "Mask"
+    DRAW TEXT STX - 8, 4, "Frames"
+    DRAW TEXT PVX, 4, "Frame"
+    DRAW TEXT ANX, 4, "Anim"
+    DRAW BOX STX - 1, STY - 1, SZ + 2, MAXF * SZ + 2
+    DRAW BOX SMX - 1, STY - 1, SZ + 2, MAXF * SZ + 2
+    DRAW TEXT 354, STY, "1"
+    DRAW TEXT 354, STY + SZ, "2"
+    DRAW TEXT 354, STY + 2 * SZ, "3"
+    DRAW TEXT 354, STY + 3 * SZ, "4"
+    DRAW TEXT 8, 160, "Click or drag in a grid to set or clear pixels."
+    DRAW TEXT 8, 178, "Keys: 1-4 Left Right frame, A add, M mask, P pause"
+    CALL DrawGrids
+    CALL DrawStrips
+    CALL DrawInfo
+    Painted = TRUE
+    CALL RefreshPreviews
+END SUB
+
+' After the frame or the pixels of the whole frame changed.
+SUB Redraw
+    IF NOT Painted THEN
+        EXIT SUB
+    END IF
+    CALL DrawGrids
+    CALL DrawStrips
+    CALL DrawInfo
+    CALL RefreshPreviews
+END SUB
+
+' ---------------------------------------------------------------- editing
+
+' Pixel X, Y of the current frame's layer L set (V TRUE) or cleared.
+' "Set" is black in the image and drawn (white) in the mask.
+SUB SetPixel(L AS INTEGER, X AS INTEGER, Y AS INTEGER, V AS BOOLEAN)
+    LOCAL I AS INTEGER
+    LOCAL Old AS INTEGER
+    I = RowAt(Cur, Y)
+    IF L = 0 THEN
+        Old = Img(I)
+        IF V THEN
+            Img(I) = Img(I) OR BitV(X + 1)
+        ELSE
+            Img(I) = Img(I) AND NOT BitV(X + 1)
+        END IF
+        IF Img(I) = Old THEN
+            EXIT SUB
+        END IF
+    ELSE
+        Old = Msk(I)
+        IF V THEN
+            Msk(I) = Msk(I) OR BitV(X + 1)
+        ELSE
+            Msk(I) = Msk(I) AND NOT BitV(X + 1)
+        END IF
+        IF Msk(I) = Old THEN
+            EXIT SUB
+        END IF
+        CALL DrawCell(1, X, Y)
+    END IF
+    CALL DrawCell(0, X, Y)
+    CALL DrawThumbPixel(Cur, X, Y)
+    CALL Changed
+END SUB
+
+' The grid (0 image, 1 mask, -1 none) under canvas point X, Y.
+FUNCTION GridAt(X AS INTEGER, Y AS INTEGER) AS INTEGER
+    IF GeomIn(X, Y, IGX, GY, SZ * ZOOM, SZ * ZOOM) THEN
+        RETURN 0
+    END IF
+    IF GeomIn(X, Y, MGX, GY, SZ * ZOOM, SZ * ZOOM) THEN
+        RETURN 1
+    END IF
+    RETURN -1
+END FUNCTION
+
+FUNCTION GridLeft(L AS INTEGER) AS INTEGER
+    IF L = 0 THEN
+        RETURN IGX
+    END IF
+    RETURN MGX
+END FUNCTION
+
+' A / B rounded to the nearest whole number (B > 0).
+FUNCTION RoundDiv(A AS INTEGER, B AS INTEGER) AS INTEGER
+    IF A >= 0 THEN
+        RETURN (2 * A + B) / (2 * B)
+    END IF
+    RETURN -((B - 2 * A) / (2 * B))
+END FUNCTION
+
+' Paint the cell under X, Y of the pen's grid, and every cell on the way
+' from the last one (the mouse reports only where the pointer is now, so a
+' quick drag would otherwise leave gaps). A drag off the grid paints
+' nothing; coming back paints again from where it comes back.
+SUB PenAt(X AS INTEGER, Y AS INTEGER)
+    LOCAL CX AS INTEGER
+    LOCAL CY AS INTEGER
+    LOCAL N AS INTEGER
+    LOCAL I AS INTEGER
+    IF GridAt(X, Y) <> PenLayer THEN
+        LastX = -1
+        EXIT SUB
+    END IF
+    CX = (X - GridLeft(PenLayer)) / ZOOM
+    CY = (Y - GY) / ZOOM
+    IF CX = LastX AND CY = LastY THEN
+        EXIT SUB
+    END IF
+    IF LastX < 0 THEN
+        CALL SetPixel(PenLayer, CX, CY, PenSet)
+    ELSE
+        N = MAX(ABS(CX - LastX), ABS(CY - LastY))
+        FOR I = 1 TO N
+            CALL SetPixel(PenLayer, LastX + RoundDiv((CX - LastX) * I, N), LastY + RoundDiv((CY - LastY) * I, N), PenSet)
+        NEXT I
+    END IF
+    LastX = CX
+    LastY = CY
+END SUB
+
+SUB Press(X AS INTEGER, Y AS INTEGER)
+    LOCAL L AS INTEGER
+    LOCAL CX AS INTEGER
+    LOCAL CY AS INTEGER
+    L = GridAt(X, Y)
+    IF L >= 0 THEN
+        CX = (X - GridLeft(L)) / ZOOM
+        CY = (Y - GY) / ZOOM
+        IF L = 0 THEN
+            PenSet = NOT ImgBit(Cur, CX, CY)
+        ELSE
+            PenSet = NOT MskBit(Cur, CX, CY)
+        END IF
+        PenLayer = L
+        LastX = -1
+        LastY = -1
+        Down = TRUE
+        CALL PenAt(X, Y)
+        EXIT SUB
+    END IF
+    IF GeomIn(X, Y, STX - 8, STY, SMX + SZ - STX + 8, MAXF * SZ) THEN
+        CALL SelectFrame((Y - STY) / SZ)
+    END IF
+END SUB
+
+SUB Mouse
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    X = GeomClamp(MOUSEX, 0, 559)
+    Y = GeomClamp(MOUSEY, 0, 199)
+    SELECT CASE MOUSEEVENT
+    CASE 1
+        CALL Press(X, Y)
+    CASE 2
+        IF Down THEN
+            CALL PenAt(X, Y)
+        END IF
+    CASE 3
+        IF Down THEN
+            CALL PenAt(X, Y)
+            Down = FALSE
+            CALL RefreshPreviews
+        END IF
+    END SELECT
+    CALL Show
+END SUB
+
+' ---------------------------------------------------------------- frames
+
+SUB SelectFrame(F AS INTEGER)
+    IF F < 0 OR F >= Frames THEN
+        CALL AppSay("There are " + STR$(Frames) + " frames")
+        BEEP
+        EXIT SUB
+    END IF
+    IF F = Cur THEN
+        EXIT SUB
+    END IF
+    Cur = F
+    IF Painted THEN
+        CALL DrawGrids
+        CALL DrawMarker
+        CALL DrawInfo
+        CALL RefreshPreviews
+    END IF
+    CALL Show
+END SUB
+
+SUB NextFrame
+    CALL SelectFrame((Cur + 1) MOD Frames)
+END SUB
+
+SUB PrevFrame
+    CALL SelectFrame((Cur + Frames - 1) MOD Frames)
+END SUB
+
+SUB AddFrame
+    LOCAL Y AS INTEGER
+    IF Frames = MAXF THEN
+        CALL AppSay("4 frames at most")
+        BEEP
+        EXIT SUB
+    END IF
+    FOR Y = 0 TO SZ - 1
+        Img(RowAt(Frames, Y)) = Img(RowAt(Cur, Y))
+        Msk(RowAt(Frames, Y)) = Msk(RowAt(Cur, Y))
+    NEXT Y
+    Frames = Frames + 1
+    Cur = Frames - 1
+    CALL Changed
+    CALL Redraw
+    CALL Show
+END SUB
+
+SUB DeleteFrame
+    LOCAL F AS INTEGER
+    LOCAL Y AS INTEGER
+    IF Frames = 1 THEN
+        CALL AppSay("The last frame stays")
+        BEEP
+        EXIT SUB
+    END IF
+    FOR F = Cur TO Frames - 2
+        FOR Y = 0 TO SZ - 1
+            Img(RowAt(F, Y)) = Img(RowAt(F + 1, Y))
+            Msk(RowAt(F, Y)) = Msk(RowAt(F + 1, Y))
+        NEXT Y
+    NEXT F
+    FOR Y = 0 TO SZ - 1
+        Img(RowAt(Frames - 1, Y)) = 0
+        Msk(RowAt(Frames - 1, Y)) = 0
+    NEXT Y
+    Frames = Frames - 1
+    IF Cur >= Frames THEN
+        Cur = Frames - 1
+    END IF
+    AnimF = 0
+    CALL Changed
+    CALL Redraw
+    CALL Show
+END SUB
+
+SUB ClearFrame
+    LOCAL Y AS INTEGER
+    FOR Y = 0 TO SZ - 1
+        Img(RowAt(Cur, Y)) = 0
+        Msk(RowAt(Cur, Y)) = 0
+    NEXT Y
+    CALL Changed
+    CALL Redraw
+    CALL Show
+END SUB
+
+SUB MaskFromImage
+    LOCAL Y AS INTEGER
+    FOR Y = 0 TO SZ - 1
+        Msk(RowAt(Cur, Y)) = Img(RowAt(Cur, Y))
+    NEXT Y
+    CALL Changed
+    CALL Redraw
+    CALL Show
+END SUB
+
+SUB MaskFill
+    LOCAL Y AS INTEGER
+    FOR Y = 0 TO SZ - 1
+        Msk(RowAt(Cur, Y)) = -1
+    NEXT Y
+    CALL Changed
+    CALL Redraw
+    CALL Show
+END SUB
+
+SUB InvertImage
+    LOCAL Y AS INTEGER
+    FOR Y = 0 TO SZ - 1
+        Img(RowAt(Cur, Y)) = NOT Img(RowAt(Cur, Y))
+    NEXT Y
+    CALL Changed
+    CALL Redraw
+    CALL Show
+END SUB
+
+SUB ToggleAnim
+    AnimOn = NOT AnimOn
+    IF Painted THEN
+        CALL DrawInfo
+    END IF
+END SUB
+
+SUB Animate
+    IF NOT Painted OR NOT AnimOn THEN
+        EXIT SUB
+    END IF
+    AnimF = (AnimF + 1) MOD Frames
+    CALL RefreshStrips
+    CALL DrawPreview(ANX, AnimF)
+END SUB
+
+SUB Keys
+    LOCAL K AS INTEGER
+    K = KEYCODE
+    IF K >= 97 AND K <= 122 THEN
+        K = K - 32
+    END IF
+    IF Down THEN
+        EXIT SUB
+    END IF
+    SELECT CASE K
+    CASE 49 TO 52
+        CALL SelectFrame(K - 49)
+    CASE KC_LEFT
+        CALL PrevFrame
+    CASE KC_RIGHT
+        CALL NextFrame
+    CASE 65
+        CALL AddFrame
+    CASE 77
+        CALL MaskFromImage
+    CASE 70
+        CALL MaskFill
+    CASE 73
+        CALL InvertImage
+    CASE 80
+        CALL ToggleAnim
+    CASE KC_STOP
+        CALL Quit
+    END SELECT
+END SUB
+
+' ---------------------------------------------------------------- files
+
+FUNCTION PicError$(Code AS INTEGER) AS STRING
+    SELECT CASE Code
+    CASE 248
+        RETURN "not a PBI1 picture"
+    CASE 250
+        RETURN "another PBI version"
+    CASE 252
+        RETURN "too large"
+    END SELECT
+    RETURN AppError$(Code)
+END FUNCTION
+
+' Base$ from the Name field: upper case, a ".PBI" typed after it dropped;
+' 1 to 7 letters, digits or _ (the mask's file adds an M).
+FUNCTION NameOk() AS BOOLEAN
+    LOCAL I AS INTEGER
+    LOCAL C AS INTEGER
+    Base$ = UCASE$(TRIM$(Name$))
+    IF LEN(Base$) > 4 THEN
+        IF RIGHT$(Base$, 4) = ".PBI" THEN
+            Base$ = LEFT$(Base$, LEN(Base$) - 4)
+        END IF
+    END IF
+    IF LEN(Base$) = 0 THEN
+        MESSAGE "Type a name in the Name field first"
+        RETURN FALSE
+    END IF
+    IF LEN(Base$) > 7 THEN
+        MESSAGE "A name has at most 7 characters (the mask adds M)"
+        RETURN FALSE
+    END IF
+    FOR I = 1 TO LEN(Base$)
+        C = ASC(MID$(Base$, I, 1))
+        IF NOT ((C >= 65 AND C <= 90) OR (C >= 48 AND C <= 57) OR C = 95) THEN
+            MESSAGE "A name has only letters, digits and _"
+            RETURN FALSE
+        END IF
+    NEXT I
+    RETURN TRUE
+END FUNCTION
+
+' Save as Base$: NAME.PBI and NAMEM.PBI. TRUE when both were written.
+FUNCTION SaveTo() AS BOOLEAN
+    CALL RefreshStrips
+    BITMAP SAVE Strip, Base$ + ".PBI"
+    IF IOERR <> 0 THEN
+        MESSAGE "Not saved: " + Base$ + ".PBI: " + PicError$(IOERR)
+        RETURN FALSE
+    END IF
+    BITMAP SAVE StripM, Base$ + "M.PBI"
+    IF IOERR <> 0 THEN
+        MESSAGE "Image saved, but not its mask " + Base$ + "M.PBI: " + PicError$(IOERR)
+        RETURN FALSE
+    END IF
+    DocName$ = Base$
+    Name$ = Base$
+    CALL AppSaved
+    CALL Show
+    RETURN TRUE
+END FUNCTION
+
+' For lib/app.pbas (unsaved changes: Save): save under the Name field.
+FUNCTION AppSave() AS BOOLEAN
+    IF LEN(TRIM$(Name$)) = 0 THEN
+        Name$ = DocName$
+    END IF
+    IF NOT NameOk() THEN
+        RETURN FALSE
+    END IF
+    RETURN SaveTo()
+END FUNCTION
+
+SUB SaveSprite
+    LOCAL Done AS BOOLEAN
+    Done = AppSave()
+END SUB
+
+' Is the bitmap a strip 16 wide holding 1 to 4 frames of 16? (W, H its size)
+FUNCTION StripOk(W AS INTEGER, H AS INTEGER) AS BOOLEAN
+    RETURN W = SZ AND H >= SZ AND H <= MAXF * SZ AND H MOD SZ = 0
+END FUNCTION
+
+' Open Base$: both files are loaded into Tmp / TmpM and checked before
+' anything changes; only then are they drawn on the canvas and read back.
+SUB OpenSprite
+    LOCAL W AS INTEGER
+    LOCAL H AS INTEGER
+    LOCAL F AS INTEGER
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL R AS INTEGER
+    LOCAL RM AS INTEGER
+    IF NOT NameOk() THEN
+        EXIT SUB
+    END IF
+    IF NOT AppMayClose() THEN
+        EXIT SUB
+    END IF
+    BITMAP LOAD Tmp, Base$ + ".PBI"
+    IF IOERR <> 0 THEN
+        MESSAGE "Not opened: " + Base$ + ".PBI: " + PicError$(IOERR)
+        EXIT SUB
+    END IF
+    W = BITMAPW(Tmp)
+    H = BITMAPH(Tmp)
+    IF NOT StripOk(W, H) THEN
+        MESSAGE "Not opened: " + Base$ + ".PBI is " + STR$(W) + " x " + STR$(H) + ", not 16 wide with 1 to 4 frames of 16"
+        EXIT SUB
+    END IF
+    BITMAP LOAD TmpM, Base$ + "M.PBI"
+    IF IOERR <> 0 THEN
+        MESSAGE "Not opened: its mask " + Base$ + "M.PBI: " + PicError$(IOERR)
+        EXIT SUB
+    END IF
+    IF BITMAPW(TmpM) <> W OR BITMAPH(TmpM) <> H THEN
+        MESSAGE "Not opened: the mask " + Base$ + "M.PBI is not the same size as the image"
+        EXIT SUB
+    END IF
+    BITMAP PUT Tmp, STX, STY
+    BITMAP PUT TmpM, SMX, STY
+    Frames = H / SZ
+    FOR F = 0 TO MAXF - 1
+        FOR Y = 0 TO SZ - 1
+            R = 0
+            RM = 0
+            IF F < Frames THEN
+                FOR X = 0 TO SZ - 1
+                    IF POINT(STX + X, STY + F * SZ + Y) = 1 THEN
+                        R = R OR BitV(X + 1)
+                    END IF
+                    IF POINT(SMX + X, STY + F * SZ + Y) = 0 THEN
+                        RM = RM OR BitV(X + 1)
+                    END IF
+                NEXT X
+            END IF
+            Img(RowAt(F, Y)) = R
+            Msk(RowAt(F, Y)) = RM
+        NEXT Y
+    NEXT F
+    Cur = 0
+    AnimF = 0
+    DocName$ = Base$
+    Name$ = Base$
+    CALL AppSaved
+    CALL Redraw
+    CALL Show
+END SUB
+
+SUB ClearAll
+    LOCAL I AS INTEGER
+    FOR I = 1 TO MAXF * SZ
+        Img(I) = 0
+        Msk(I) = 0
+    NEXT I
+    Frames = 1
+    Cur = 0
+    AnimF = 0
+END SUB
+
+SUB NewSprite
+    IF NOT AppMayClose() THEN
+        EXIT SUB
+    END IF
+    CALL ClearAll
+    DocName$ = ""
+    Name$ = ""
+    CALL AppSaved
+    CALL Redraw
+    CALL Show
+END SUB
+
+SUB Quit
+    IF AppMayClose() THEN
+        TIMER OFF
+        EXIT
+    END IF
+END SUB
+
+' ---------------------------------------------------------------- start
+
+DIM StartI AS INTEGER
+FOR StartI = 1 TO SZ
+    BitV(StartI) = SHL(1, SZ - StartI)
+NEXT StartI
+CALL ClearAll
+AnimOn = TRUE
+CALL Show
+END

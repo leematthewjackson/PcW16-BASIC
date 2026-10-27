@@ -1,0 +1,41 @@
+' M6 Phase 1 edge cases (XAnne script P-E). Every limit at its edge; the
+' last button stops the program on purpose with a defined runtime error.
+DIM Note$ AS STRING
+DIM Answer AS INTEGER
+WINDOW "Edge cases", LARGE
+NUMBERBOX Big, "Any whole number"
+RADIO Pick, "One", "Two", "Three", "Four", "Five", "Six"
+CHECKBOX Flag, "Focus moves here"
+LABEL Note$
+BUTTON "Read", ReadAll, DEFAULT
+BUTTON "Ask", AskTwo, KEY F8
+BUTTON "Focus", FocusFlag, KEY HELP
+BUTTON "Clear", ClearPick, KEY BLUE
+BUTTON "Same", SameWindow, KEY YELLOW
+BUTTON "Break", BreakIt
+SUB ReadAll
+    Note$ = "N=" + STR$(Big) + " P=" + STR$(Pick)
+END SUB
+SUB AskTwo
+    Answer = ASK("Two buttons: which?", "Left", "Right")
+    Note$ = "Answer " + STR$(Answer)
+END SUB
+SUB FocusFlag
+    FOCUS Flag
+    Note$ = "Focus on the tick box"
+END SUB
+SUB ClearPick
+    Pick = 0
+    Big = -32768
+    Note$ = "Cleared"
+END SUB
+SUB SameWindow
+    Note$ = "Same window again"
+END SUB
+SUB BreakIt
+    Pick = 7
+END SUB
+Big = 32767
+Pick = 6
+Note$ = "Start"
+END

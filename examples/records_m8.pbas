@@ -1,0 +1,213 @@
+' Sales records (M8 benchmark 3): data processing on more records than
+' the 16K program image could hold. Reads up to 3000 sales from SALES.DAT
+' into BANKED arrays (16K blocks got from Rosanne, LANGUAGE-SPEC §5.4),
+' totals them by region, sorts them by amount (Shell sort of an index
+' array, largest first) and writes REPORT.TXT: one line per region, the
+' grand total and the ten largest sales. One MESSAGE says how it went.
+' SALES.DAT: the line PBSALES1, then one sale per line:
+'   region;quantity;price     e.g.  North;12;3.75
+'   region 1..12 characters, quantity a whole number 0..32767, price a
+'   number from 0 to 1E9. At most 20 different regions.
+' Files: reads SALES.DAT (never changes it); REPLACES REPORT.TXT. A bad
+' line is reported with its line number and no report is written.
+' Needs 6 free 16K blocks: 3000 regions x 13 bytes (3 blocks), quantities,
+' amounts and the sort index (1 block each).
+' Build with the default --string-capacity (64): a line holds up to 63
+' characters.
+CONST MAXR = 3000
+CONST MAXG = 20
+DIM Region$(3000) AS STRING * 12 BANKED
+DIM Qty(3000) AS INTEGER BANKED
+DIM Amount(3000) AS REAL BANKED
+DIM Ord(3000) AS INTEGER BANKED
+DIM GName$(20) AS STRING * 12
+DIM GCount(20) AS INTEGER
+DIM GQty(20) AS REAL
+DIM GTotal(20) AS REAL
+DIM NG AS INTEGER
+DIM N AS INTEGER
+DIM LineNo AS INTEGER
+DIM L$ AS STRING
+DIM Why$ AS STRING * 32
+
+' Read sale K from L$; FALSE (with Why$) if the line is not a sale.
+FUNCTION TakeSale(K AS INTEGER) AS BOOLEAN
+    LOCAL P1 AS INTEGER
+    LOCAL P2 AS INTEGER
+    LOCAL G AS INTEGER
+    LOCAL Q AS INTEGER
+    LOCAL Price AS REAL
+    LOCAL Q$ AS STRING
+    LOCAL P$ AS STRING
+    LOCAL Name$ AS STRING
+    P1 = INSTR(L$, ";")
+    IF P1 < 2 OR P1 > 13 THEN
+        Why$ = "region must be 1 to 12 chars"
+        RETURN FALSE
+    END IF
+    P2 = INSTR(P1 + 1, L$, ";")
+    IF P2 = 0 THEN
+        Why$ = "needs region;quantity;price"
+        RETURN FALSE
+    END IF
+    Name$ = LEFT$(L$, P1 - 1)
+    Q$ = MID$(L$, P1 + 1, P2 - P1 - 1)
+    P$ = RIGHT$(L$, LEN(L$) - P2)
+    IF LEN(Q$) = 0 OR LEN(Q$) > 5 OR NOT ISNUM(Q$) OR INSTR(Q$, ".") > 0 OR INSTR(UCASE$(Q$), "E") > 0 THEN
+        Why$ = "bad quantity"
+        RETURN FALSE
+    END IF
+    IF REALVAL(Q$) < 0 OR REALVAL(Q$) > 32767 THEN
+        Why$ = "bad quantity"
+        RETURN FALSE
+    END IF
+    IF NOT ISNUM(P$) THEN
+        Why$ = "bad price"
+        RETURN FALSE
+    END IF
+    Price = REALVAL(P$)
+    IF Price < 0 OR Price > 1E9 THEN
+        Why$ = "bad price"
+        RETURN FALSE
+    END IF
+    Q = VAL(Q$)
+    G = 1
+    WHILE G <= NG
+        IF GName$(G) = Name$ THEN
+            EXIT WHILE
+        END IF
+        G = G + 1
+    WEND
+    IF G > NG THEN
+        IF NG = MAXG THEN
+            Why$ = "more than 20 regions"
+            RETURN FALSE
+        END IF
+        NG = G
+        GName$(G) = Name$
+    END IF
+    Region$(K) = Name$
+    Qty(K) = Q
+    Amount(K) = Q * Price
+    Ord(K) = K
+    GCount(G) = GCount(G) + 1
+    GQty(G) = GQty(G) + Q
+    GTotal(G) = GTotal(G) + Q * Price
+    RETURN TRUE
+END FUNCTION
+
+' FALSE (with Why$) if SALES.DAT is missing, damaged or too long.
+FUNCTION LoadSales() AS BOOLEAN
+    OPEN "SALES.DAT" FOR INPUT AS #1
+    IF IOERR <> 0 THEN
+        Why$ = "cannot open: error " + STR$(IOERR)
+        RETURN FALSE
+    END IF
+    LINE INPUT #1, L$
+    LineNo = 1
+    IF IOERR <> 0 OR L$ <> "PBSALES1" THEN
+        Why$ = "not a sales file"
+        CLOSE #1
+        RETURN FALSE
+    END IF
+    WHILE NOT EOF(1)
+        LINE INPUT #1, L$
+        LineNo = LineNo + 1
+        IF IOERR <> 0 THEN
+            Why$ = "read error " + STR$(IOERR)
+            CLOSE #1
+            RETURN FALSE
+        END IF
+        IF N = MAXR THEN
+            Why$ = "more than 3000 sales"
+            CLOSE #1
+            RETURN FALSE
+        END IF
+        IF NOT TakeSale(N + 1) THEN
+            CLOSE #1
+            RETURN FALSE
+        END IF
+        N = N + 1
+    WEND
+    CLOSE #1
+    RETURN TRUE
+END FUNCTION
+
+' Shell sort of the index Ord by Amount, largest first.
+SUB SortByAmount
+    LOCAL Gap AS INTEGER
+    LOCAL I AS INTEGER
+    LOCAL J AS INTEGER
+    LOCAL T AS INTEGER
+    LOCAL A AS REAL
+    LOCAL Moving AS BOOLEAN
+    Gap = N / 2
+    WHILE Gap > 0
+        FOR I = Gap + 1 TO N
+            T = Ord(I)
+            A = Amount(T)
+            J = I
+            Moving = TRUE
+            WHILE Moving AND J > Gap
+                IF Amount(Ord(J - Gap)) < A THEN
+                    Ord(J) = Ord(J - Gap)
+                    J = J - Gap
+                ELSE
+                    Moving = FALSE
+                END IF
+            WEND
+            Ord(J) = T
+        NEXT I
+        Gap = Gap / 2
+    WEND
+END SUB
+
+FUNCTION WriteReport() AS INTEGER
+    LOCAL G AS INTEGER
+    LOCAL K AS INTEGER
+    LOCAL T AS INTEGER
+    LOCAL Code AS INTEGER
+    LOCAL Total AS REAL
+    OPEN "REPORT.TXT" FOR OUTPUT AS #2
+    Code = IOERR
+    IF Code = 0 THEN
+        PRINT #2, "Sales report: " + STR$(N) + " sales in " + STR$(NG) + " regions"
+        Code = IOERR
+    END IF
+    FOR G = 1 TO NG
+        IF Code = 0 THEN
+            PRINT #2, GName$(G) + ": " + STR$(GCount(G)) + " sales, " + STR$(GQty(G)) + " items, " + STR$(GTotal(G))
+            Code = IOERR
+        END IF
+        Total = Total + GTotal(G)
+    NEXT G
+    IF Code = 0 THEN
+        PRINT #2, "Total: " + STR$(Total)
+        Code = IOERR
+    END IF
+    K = 1
+    WHILE K <= 10 AND K <= N AND Code = 0
+        T = Ord(K)
+        PRINT #2, STR$(K) + ". " + Region$(T) + " " + STR$(Qty(T)) + " for " + STR$(Amount(T))
+        Code = IOERR
+        K = K + 1
+    WEND
+    CLOSE #2
+    IF Code = 0 THEN
+        Code = IOERR
+    END IF
+    RETURN Code
+END FUNCTION
+
+IF NOT LoadSales() THEN
+    MESSAGE "SALES.DAT line " + STR$(LineNo) + ": " + Why$
+ELSE
+    CALL SortByAmount
+    LineNo = WriteReport()
+    IF LineNo <> 0 THEN
+        MESSAGE "REPORT.TXT not written: error " + STR$(LineNo)
+    ELSE
+        MESSAGE "Report written: " + STR$(N) + " sales, " + STR$(NG) + " regions"
+    END IF
+END IF
+END

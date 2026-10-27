@@ -1,0 +1,1199 @@
+' MDEDIT III (M11, development variant): MDEDIT II (examples/mdedit2.pbas,
+' accepted in M10 and unchanged) with conventional selection display.
+' The text is drawn normally spaced in Rosanne's dialog font (one DRAW TEXT a
+' row, as MDEDIT II), and every position on a row is measured with TEXTWIDTH
+' (M11 corrective: Rosanne's width call measures exactly), so that:
+'   - the caret is a thin bar between two characters and never moves text;
+'   - a selection is shown highlighted (inverted) over exactly its
+'     characters, plus a short block where it includes a line's end;
+'   - a mouse press or drag finds the character edge nearest the pointer.
+' No marks are added to the text.
+'
+' Keys (on the editing page): letters, digits and symbols type; Return splits
+' the line; Backspace / Delete delete one character, or the selection;
+' cursor keys, Home, End, PgUp, PgDn move; with Shift held they extend the
+' selection (also after Mark - Edit > Mark, Ctrl+K or f1 - until the next
+' edit or Mark again); Tab types 4 spaces; Stop quits. Keys held with Ctrl
+' belong to the menus and never type (KI-60).
+' Mouse: press and drag over the text to select it; a click moves the caret.
+' Menus: Ctrl+X cut, Ctrl+C copy, Ctrl+V paste, Ctrl+A select all (the
+' page stays where it is), Ctrl+K mark, Ctrl+Z undo, Ctrl+Y redo, Ctrl+W wrap,
+' Ctrl+S save, Ctrl+O open, Ctrl+F find / replace, Ctrl+G find next,
+' Ctrl+L go to line, Ctrl+Q quit; Ctrl+Home / Ctrl+End go to the top / end.
+'
+' Undo keeps the last 4 steps. A step is a run of typing on one line, a
+' run of deletions, a line split or join, a cut, a paste, a replacement or
+' a "replace all". Each step costs one copy of the whole text.
+'
+' Saving (in the build folder, \PCW\FOLDER01 by default) writes MDEDIT3.TMP,
+' reads it back and compares it with the text, then keeps the previous file
+' as NAME.BAK (an older NAME.BAK is replaced) and renames MDEDIT3.TMP to the
+' file. If any step fails the old file is still there (or in NAME.BAK) and
+' the text is still in MDEDIT3.TMP. It starts with EDTEST.MD.
+'
+' Display: wrap is on at the start - a long line continues on the next
+' rows, 50 characters a row (as MDEDIT II), so the page never scrolls
+' sideways (with wrap off it does, MDEDIT's way). Only the lines that change
+' are redrawn. A row of characters so wide that it would pass the page's
+' right edge is cut there (only rows of mostly 12-13 pixel characters).
+' Limits: 30000 bytes of text (the clipboard too); 13 rows; Up and Down
+' move by whole lines.
+' Build with --runtime-banks all (python3 tools/build.py examples/mdedit3.pbas --runtime-banks all)
+CONST ROWS = 13
+CONST COLS = 50
+CONST EOLW = 6
+CONST TEXTW = 552
+CONST LINEH = 16
+CONST STEPS = 4
+CONST TEMPNAME = "MDEDIT3.TMP"
+DIM Doc AS TEXT * 30000
+DIM Clip AS TEXT * 30000
+DIM H1 AS TEXT * 30000
+DIM H2 AS TEXT * 30000
+DIM H3 AS TEXT * 30000
+DIM H4 AS TEXT * 30000
+DIM Swap AS TEXT * 30000
+DIM HLine(4) AS INTEGER
+DIM HCol(4) AS INTEGER
+DIM HTop AS INTEGER
+DIM UndoN AS INTEGER
+DIM RedoN AS INTEGER
+DIM LastKind AS INTEGER
+DIM LastLine AS INTEGER
+DIM Status$ AS STRING * 25
+DIM Info$ AS STRING * 24
+DIM FileName$ AS STRING * 13
+DIM DocName$ AS STRING * 13
+DIM Target$ AS STRING * 13
+DIM BakName$ AS STRING * 13
+DIM InTemp AS BOOLEAN
+DIM FindText$ AS STRING * 40
+DIM ReplText$ AS STRING * 40
+DIM GoLine AS INTEGER
+DIM CurLine AS INTEGER
+DIM CurCol AS INTEGER
+DIM TopLine AS INTEGER
+DIM LeftCol AS INTEGER
+DIM Wrap AS BOOLEAN
+DIM SelOn AS BOOLEAN
+DIM Marking AS BOOLEAN
+DIM AncLine AS INTEGER
+DIM AncCol AS INTEGER
+DIM S1 AS INTEGER
+DIM C1 AS INTEGER
+DIM S2 AS INTEGER
+DIM C2 AS INTEGER
+DIM Seg$ AS STRING * 56
+DIM OldSpan AS INTEGER
+DIM Dragging AS BOOLEAN
+DIM Answer AS INTEGER
+DIM Redraw AS BOOLEAN
+DIM N AS INTEGER
+
+WINDOW Main, "MDEDIT III", LARGE
+LABEL Status$
+CANVAS 560, 208, PAINT Paint, MOUSE Mouse, KEYS Keys
+LABEL Info$
+BUTTON "Save", SaveDoc
+BUTTON "Find next", FindNext
+BUTTON "Files...", ShowTools
+BUTTON "Quit", QuitEditor
+
+WINDOW Tools, "Files", LARGE
+TEXTBOX FileName$, "File name (8.3)"
+NUMBERBOX GoLine, "Go to line", MIN 1
+BUTTON "Open", OpenDoc
+BUTTON "Save as", SaveAs
+BUTTON "Go to", GoToLine
+BUTTON "Back", BackToMain
+
+WINDOW Finder, "Find and replace", LARGE
+TEXTBOX FindText$, "Find"
+TEXTBOX ReplText$, "Replace with"
+BUTTON "Find", FindFirst
+BUTTON "Replace", ReplaceOne
+BUTTON "Replace all", ReplaceAll
+BUTTON "Back", BackToMain
+
+MENU "File"
+    ITEM "Open...", ShowTools, KEY "O"
+    ITEM "Save", SaveDoc, KEY "S"
+    ITEM "Quit", QuitEditor, KEY "Q"
+END MENU
+MENU "Edit"
+    ITEM "Undo", UndoStep, KEY "Z"
+    ITEM "Redo", RedoStep, KEY "Y"
+    ITEM "-"
+    ITEM "Cut", CutSel, KEY "X"
+    ITEM "Copy", CopySel, KEY "C"
+    ITEM "Paste", PasteClip, KEY "V"
+    ITEM "Select all", SelectAll, KEY "A"
+    ITEM "Mark", MarkSel, KEY "K"
+    ITEM "-"
+    ITEM "Find...", ShowFinder, KEY "F"
+    ITEM "Find next", FindNext, KEY "G"
+    ITEM "Go to...", ShowTools, KEY "L"
+END MENU
+MENU "View"
+    ITEM "Wrap on/off", ToggleWrap, KEY "W"
+END MENU
+
+' ------------------------------------------------------------ selection
+' S1/C1 .. S2/C2 = the selection in text order (anchor and caret sorted).
+SUB SelRange
+    IF AncLine < CurLine OR (AncLine = CurLine AND AncCol <= CurCol) THEN
+        S1 = AncLine
+        C1 = AncCol
+        S2 = CurLine
+        C2 = CurCol
+    ELSE
+        S1 = CurLine
+        C1 = CurCol
+        S2 = AncLine
+        C2 = AncCol
+    END IF
+END SUB
+
+FUNCTION HasSel() AS BOOLEAN
+    IF NOT SelOn THEN
+        RETURN FALSE
+    END IF
+    RETURN AncLine <> CurLine OR AncCol <> CurCol
+END FUNCTION
+
+SUB ClearSel
+    IF SelOn THEN
+        Redraw = TRUE
+    END IF
+    SelOn = FALSE
+    Marking = FALSE
+END SUB
+
+' Before a caret movement: Shift (or Mark) extends the selection, else it goes.
+SUB BeforeMove
+    IF (KEYSHIFT AND 1) <> 0 OR Marking THEN
+        IF NOT SelOn THEN
+            SelOn = TRUE
+            AncLine = CurLine
+            AncCol = CurCol
+        END IF
+    ELSE
+        CALL ClearSel
+    END IF
+    LastKind = 0
+END SUB
+
+' ------------------------------------------------------------ drawing
+' Row Row of the page shows line RLine from column RCol (RCount columns).
+DIM RLine AS INTEGER
+DIM RCol AS INTEGER
+
+SUB RowStart(Row AS INTEGER)
+    LOCAL R AS INTEGER
+    LOCAL Span AS INTEGER
+    IF NOT Wrap THEN
+        RLine = TopLine + Row
+        RCol = LeftCol
+        EXIT SUB
+    END IF
+    RLine = TopLine
+    R = Row
+    WHILE RLine <= TEXTLINES(Doc)
+        Span = TEXTLEN(Doc, RLine) / COLS + 1
+        IF R < Span THEN
+            RCol = R * COLS + 1
+            EXIT SUB
+        END IF
+        R = R - Span
+        RLine = RLine + 1
+    WEND
+    RCol = 1
+END SUB
+
+' Seg$ cut at a whole character to at most TEXTW pixels (it is whole
+' unless the row is made of very wide characters).
+FUNCTION FitSeg$() AS STRING
+    LOCAL N AS INTEGER
+    IF TEXTWIDTH(Seg$) <= TEXTW THEN
+        RETURN Seg$
+    END IF
+    N = LEN(Seg$) - 1
+    WHILE N > 0 AND TEXTWIDTH(LEFT$(Seg$, N)) > TEXTW
+        N = N - 1
+    WEND
+    RETURN LEFT$(Seg$, N)
+END FUNCTION
+
+' The x of the edge before character K + 1 of Seg$ (K characters in).
+FUNCTION SegX(K AS INTEGER) AS INTEGER
+    IF K <= 0 THEN
+        RETURN 4
+    END IF
+    RETURN 4 + MIN(TEXTW, TEXTWIDTH(LEFT$(Seg$, K)))
+END FUNCTION
+
+' Draw page row Row: line RLine from column RCol (set by RowStart or
+' DrawLine): the text normally spaced, then the selected characters
+' inverted (and EOLW pixels more where the selection goes on past the
+' line's end), then the caret as a 2-pixel bar just before its character.
+' The caret sits on the row that shows its column; the column after a
+' line's end is on the line's last row. Seg$ is cut where a row of very
+' wide characters would pass the right edge (TEXTW pixels).
+SUB DrawSeg(Row AS INTEGER)
+    LOCAL Y AS INTEGER
+    LOCAL Last AS INTEGER
+    LOCAL A AS INTEGER
+    LOCAL B AS INTEGER
+    LOCAL XA AS INTEGER
+    LOCAL XB AS INTEGER
+    Y = Row * LINEH
+    DRAW FILL 0, Y, 560, LINEH, 8
+    IF RLine > TEXTLINES(Doc) THEN
+        EXIT SUB
+    END IF
+    Seg$ = ""
+    IF RCol <= TEXTLEN(Doc, RLine) + 1 THEN
+        Seg$ = TEXTGET$(Doc, RLine, RCol, COLS)
+    END IF
+    Last = RCol + LEN(Seg$)
+    IF Wrap AND RCol + COLS <= TEXTLEN(Doc, RLine) + 1 THEN
+        Last = RCol + COLS - 1
+    END IF
+    IF LEN(Seg$) > 0 THEN
+        DRAW TEXT 4, Y, FitSeg$()
+    END IF
+    IF HasSel() THEN
+        IF RLine >= S1 AND RLine <= S2 THEN
+            A = RCol
+            IF RLine = S1 THEN
+                A = MAX(C1, RCol)
+            END IF
+            B = RCol + LEN(Seg$)
+            XB = 0
+            IF RLine = S2 THEN
+                B = MIN(C2, B)
+            ELSE
+                IF B = TEXTLEN(Doc, RLine) + 1 AND LEN(Seg$) < COLS THEN
+                    XB = EOLW               ' the line's end is selected too
+                END IF
+            END IF
+            XA = SegX(A - RCol)
+            XB = MIN(4 + TEXTW, SegX(B - RCol) + XB)
+            IF XB > XA THEN
+                DRAW INVERT XA, Y, XB - XA, LINEH
+            END IF
+        END IF
+    END IF
+    IF RLine = CurLine AND CurCol >= RCol AND CurCol <= Last THEN
+        DRAW INVERT SegX(CurCol - RCol) - 1, Y, 2, LINEH
+    END IF
+END SUB
+
+SUB DrawRow(Row AS INTEGER)
+    CALL RowStart(Row)
+    CALL DrawSeg(Row)
+END SUB
+
+' Rows line L takes on the page.
+FUNCTION Span(L AS INTEGER) AS INTEGER
+    IF NOT Wrap THEN
+        RETURN 1
+    END IF
+    RETURN TEXTLEN(Doc, L) / COLS + 1
+END FUNCTION
+
+' The page row of line L's first row (ROWS: at or below the page's end).
+FUNCTION LineRow(L AS INTEGER) AS INTEGER
+    LOCAL K AS INTEGER
+    LOCAL R AS INTEGER
+    IF NOT Wrap THEN
+        RETURN L - TopLine
+    END IF
+    R = 0
+    FOR K = TopLine TO L - 1
+        R = R + TEXTLEN(Doc, K) / COLS + 1
+        IF R >= ROWS THEN
+            RETURN ROWS
+        END IF
+    NEXT K
+    RETURN R
+END FUNCTION
+
+' Redraw every row of line L that is on the page.
+SUB DrawLine(L AS INTEGER)
+    LOCAL R AS INTEGER
+    LOCAL S AS INTEGER
+    LOCAL N AS INTEGER
+    IF L < TopLine OR L > TEXTLINES(Doc) THEN
+        EXIT SUB
+    END IF
+    R = LineRow(L)
+    N = Span(L)
+    RLine = L
+    FOR S = 0 TO N - 1
+        IF R + S >= ROWS THEN
+            EXIT SUB
+        END IF
+        RCol = LeftCol
+        IF Wrap THEN
+            RCol = S * COLS + 1
+        END IF
+        CALL DrawSeg(R + S)
+    NEXT S
+END SUB
+
+SUB Paint
+    LOCAL Row AS INTEGER
+    IF HasSel() THEN
+        CALL SelRange
+    END IF
+    FOR Row = 0 TO ROWS - 1
+        CALL DrawRow(Row)
+    NEXT Row
+    Redraw = FALSE
+    CALL ShowStatus
+END SUB
+
+' The status line: "* " when unsaved, the position, " sel" or " mark",
+' " nowrap" when wrap is off. A LABEL shows at most 24 characters (M5d);
+' only extreme line or column numbers make it longer, and then its end
+' (the least important part) is not shown.
+SUB ShowStatus
+    Seg$ = "L" + STR$(CurLine) + "/" + STR$(TEXTLINES(Doc)) + " C" + STR$(CurCol)
+    IF Unsaved() THEN
+        Seg$ = "* " + Seg$
+    END IF
+    IF Marking THEN
+        Seg$ = Seg$ + " mark"
+    ELSE
+        IF HasSel() THEN
+            Seg$ = Seg$ + " sel"
+        END IF
+    END IF
+    IF NOT Wrap THEN
+        Seg$ = Seg$ + " nowrap"
+    END IF
+    Status$ = LEFT$(Seg$, 24)
+END SUB
+
+FUNCTION Unsaved() AS BOOLEAN
+    RETURN TEXTCHANGED(Doc) OR InTemp
+END FUNCTION
+
+' The caret's row on the page (wrap: counting rows of the lines above it).
+FUNCTION CaretRow() AS INTEGER
+    LOCAL L AS INTEGER
+    LOCAL R AS INTEGER
+    IF NOT Wrap THEN
+        RETURN CurLine - TopLine
+    END IF
+    R = 0
+    FOR L = TopLine TO CurLine - 1
+        R = R + TEXTLEN(Doc, L) / COLS + 1
+        IF R >= ROWS THEN
+            RETURN R
+        END IF
+    NEXT L
+    RETURN R + (CurCol - 1) / COLS
+END FUNCTION
+
+' Keep the caret on the page; a full redraw if the page moved.
+SUB Follow
+    IF CurLine < TopLine THEN
+        TopLine = CurLine
+        Redraw = TRUE
+    END IF
+    IF Wrap THEN
+        LeftCol = 1
+        WHILE CaretRow() >= ROWS AND TopLine < CurLine
+            TopLine = TopLine + 1
+            Redraw = TRUE
+        WEND
+        EXIT SUB
+    END IF
+    IF CurLine >= TopLine + ROWS THEN
+        TopLine = CurLine - ROWS + 1
+        Redraw = TRUE
+    END IF
+    IF CurCol < LeftCol THEN
+        LeftCol = MAX(1, CurCol - 8)
+        Redraw = TRUE
+    END IF
+    IF CurCol > LeftCol + COLS - 1 THEN
+        LeftCol = CurCol - COLS + 8
+        Redraw = TRUE
+    END IF
+END SUB
+
+' After a change: the caret's rows, or the whole page when lines moved,
+' wrap is on, or a selection is shown.
+SUB Refresh(OldLine AS INTEGER)
+    LOCAL L AS INTEGER
+    LOCAL N AS INTEGER
+    CALL Follow
+    IF Wrap AND OldLine = CurLine AND CurLine <= TEXTLINES(Doc) THEN
+        N = Span(CurLine)
+        IF N <> OldSpan THEN
+            Redraw = TRUE           ' the line now takes more or fewer rows
+        END IF
+    END IF
+    IF Redraw THEN
+        CALL Paint
+        EXIT SUB
+    END IF
+    IF HasSel() THEN
+        CALL SelRange
+    END IF
+    IF SelOn THEN                   ' lines between the two caret lines change
+        FOR L = MIN(OldLine, CurLine) TO MAX(OldLine, CurLine)
+            CALL DrawLine(L)
+        NEXT L
+    ELSE
+        IF OldLine <> CurLine THEN
+            CALL DrawLine(OldLine)
+        END IF
+        CALL DrawLine(CurLine)
+    END IF
+    CALL ShowStatus
+END SUB
+
+SUB ClampCol
+    IF CurCol > TEXTLEN(Doc, CurLine) + 1 THEN
+        CurCol = TEXTLEN(Doc, CurLine) + 1
+    END IF
+END SUB
+
+' ------------------------------------------------------------ undo / redo
+' Snapshots H1..H4 form a ring; HTop is the newest. Undo swaps the text with
+' the newest snapshot (so that snapshot then holds the redo state); redo
+' swaps it back.
+SUB SaveSlot(K AS INTEGER)
+    SELECT CASE K
+    CASE 1
+        TEXT COPY H1, Doc
+    CASE 2
+        TEXT COPY H2, Doc
+    CASE 3
+        TEXT COPY H3, Doc
+    CASE ELSE
+        TEXT COPY H4, Doc
+    END SELECT
+    HLine(K) = CurLine
+    HCol(K) = CurCol
+END SUB
+
+SUB SwapSlot(K AS INTEGER)
+    LOCAL L AS INTEGER
+    LOCAL C AS INTEGER
+    TEXT COPY Swap, Doc
+    SELECT CASE K
+    CASE 1
+        TEXT COPY Doc, H1
+        TEXT COPY H1, Swap
+    CASE 2
+        TEXT COPY Doc, H2
+        TEXT COPY H2, Swap
+    CASE 3
+        TEXT COPY Doc, H3
+        TEXT COPY H3, Swap
+    CASE ELSE
+        TEXT COPY Doc, H4
+        TEXT COPY H4, Swap
+    END SELECT
+    L = HLine(K)
+    C = HCol(K)
+    HLine(K) = CurLine
+    HCol(K) = CurCol
+    CurLine = MIN(MAX(1, L), TEXTLINES(Doc))
+    CurCol = C
+    CALL ClampCol
+    TEXT CLEAR Swap
+END SUB
+
+' Start a new undo step (Kind: 1 typing, 2 deleting, 3 anything else); a
+' typing or deleting run on the same line stays one step.
+SUB Checkpoint(Kind AS INTEGER)
+    IF Kind < 3 AND Kind = LastKind AND CurLine = LastLine THEN
+        EXIT SUB
+    END IF
+    LastKind = Kind
+    LastLine = CurLine
+    HTop = HTop MOD STEPS + 1
+    CALL SaveSlot(HTop)
+    UndoN = MIN(UndoN + 1, STEPS)
+    RedoN = 0
+END SUB
+
+SUB UndoStep
+    LOCAL Old AS INTEGER
+    IF UndoN = 0 THEN
+        Info$ = "Nothing to undo"
+        CALL ShowStatus
+        EXIT SUB
+    END IF
+    Old = CurLine
+    CALL SwapSlot(HTop)
+    HTop = (HTop + STEPS - 2) MOD STEPS + 1
+    UndoN = UndoN - 1
+    RedoN = RedoN + 1
+    LastKind = 0
+    CALL ClearSel
+    Info$ = "Undone"
+    Redraw = TRUE
+    CALL Refresh(Old)
+END SUB
+
+SUB RedoStep
+    LOCAL Old AS INTEGER
+    IF RedoN = 0 THEN
+        Info$ = "Nothing to redo"
+        CALL ShowStatus
+        EXIT SUB
+    END IF
+    Old = CurLine
+    HTop = HTop MOD STEPS + 1
+    CALL SwapSlot(HTop)
+    UndoN = UndoN + 1
+    RedoN = RedoN - 1
+    LastKind = 0
+    CALL ClearSel
+    Info$ = "Redone"
+    Redraw = TRUE
+    CALL Refresh(Old)
+END SUB
+
+SUB ForgetHistory
+    UndoN = 0
+    RedoN = 0
+    HTop = 0
+    LastKind = 0
+END SUB
+
+' ------------------------------------------------------------ editing
+' Delete the selection (one undo step is already started by the caller).
+SUB RemoveSel
+    CALL SelRange
+    TEXT REMOVE Doc, S1, C1, S2, C2
+    CurLine = S1
+    CurCol = C1
+    SelOn = FALSE
+    Marking = FALSE
+    Redraw = TRUE
+END SUB
+
+SUB CopySel
+    IF NOT HasSel() THEN
+        Info$ = "Nothing selected"
+        CALL ShowStatus
+        EXIT SUB
+    END IF
+    CALL SelRange
+    TEXT COPY Clip, Doc, S1, C1, S2, C2
+    Info$ = "Copied"
+    Marking = FALSE
+    CALL Refresh(CurLine)
+END SUB
+
+SUB CutSel
+    IF NOT HasSel() THEN
+        Info$ = "Nothing selected"
+        CALL ShowStatus
+        EXIT SUB
+    END IF
+    CALL SelRange
+    TEXT COPY Clip, Doc, S1, C1, S2, C2
+    CALL Checkpoint(3)
+    CALL RemoveSel
+    Info$ = "Cut"
+    CALL Refresh(CurLine)
+END SUB
+
+SUB PasteClip
+    LOCAL Lines AS INTEGER
+    IF TEXTSIZE(Clip) = 0 THEN
+        Info$ = "Clipboard empty"
+        CALL ShowStatus
+        EXIT SUB
+    END IF
+    CALL Checkpoint(3)
+    IF HasSel() THEN
+        CALL RemoveSel
+    END IF
+    CALL ClearSel
+    IF TEXTFREE(Doc) < TEXTSIZE(Clip) THEN
+        Info$ = "No room"
+        CALL ShowStatus
+        EXIT SUB
+    END IF
+    Lines = TEXTLINES(Clip)
+    TEXT PASTE Doc, CurLine, CurCol, Clip
+    IF Lines = 1 THEN
+        CurCol = CurCol + TEXTLEN(Clip, 1)
+    ELSE
+        CurLine = CurLine + Lines - 1
+        CurCol = TEXTLEN(Clip, Lines) + 1
+    END IF
+    Info$ = "Pasted"
+    Redraw = TRUE
+    CALL Refresh(CurLine)
+END SUB
+
+' Select the whole text; the caret goes to the start (the page does not jump
+' to the end), the anchor to the end.
+SUB SelectAll
+    SelOn = TRUE
+    Marking = FALSE
+    AncLine = TEXTLINES(Doc)
+    AncCol = TEXTLEN(Doc, AncLine) + 1
+    CurLine = 1
+    CurCol = 1
+    LastKind = 0
+    Redraw = TRUE
+    CALL Refresh(CurLine)
+END SUB
+
+SUB MarkSel
+    IF Marking THEN
+        Marking = FALSE
+        Info$ = "Mark off"
+    ELSE
+        Marking = TRUE
+        SelOn = TRUE
+        AncLine = CurLine
+        AncCol = CurCol
+        Info$ = "Mark on"
+    END IF
+    Redraw = TRUE
+    CALL Refresh(CurLine)
+END SUB
+
+SUB ToggleWrap
+    Wrap = NOT Wrap
+    LeftCol = 1
+    Redraw = TRUE
+    CALL Refresh(CurLine)
+END SUB
+
+' A typed text: replaces the selection, else goes in at the caret.
+SUB TypeText(T$ AS STRING)
+    IF HasSel() THEN
+        CALL Checkpoint(3)
+        CALL RemoveSel
+        LastKind = 1                ' the typing that follows is the same step
+        LastLine = CurLine
+    ELSE
+        CALL Checkpoint(1)
+    END IF
+    CALL ClearSel
+    IF TEXTFREE(Doc) < LEN(T$) THEN
+        Info$ = "The text is full"
+        EXIT SUB
+    END IF
+    TEXT INSERT Doc, CurLine, CurCol, T$
+    CurCol = CurCol + LEN(T$)
+END SUB
+
+' ------------------------------------------------------------- keys
+SUB Keys
+    LOCAL Old AS INTEGER
+    LOCAL K AS INTEGER
+    Old = CurLine
+    K = KEYCODE
+    IF (KEYSHIFT AND 4) <> 0 AND K <> 230 AND K <> 231 THEN
+        EXIT SUB                    ' a Ctrl key belongs to the menus (KI-60)
+    END IF
+    OldSpan = Span(CurLine)
+    Info$ = ""
+    SELECT CASE K
+    CASE 241
+        CALL MarkSel
+        EXIT SUB
+    CASE 32 TO 126, 128 TO 223
+        CALL TypeText(CHR$(K))
+    CASE 9
+        CALL TypeText("    ")
+    CASE 13
+        CALL Checkpoint(3)
+        IF HasSel() THEN
+            CALL RemoveSel
+        END IF
+        CALL ClearSel
+        IF TEXTFREE(Doc) < 2 THEN
+            Info$ = "The text is full"
+        ELSE
+            TEXT SPLIT Doc, CurLine, CurCol
+            CurLine = CurLine + 1
+            CurCol = 1
+            Redraw = TRUE
+        END IF
+    CASE 8, 229
+        IF HasSel() THEN
+            CALL Checkpoint(3)
+            CALL RemoveSel
+        ELSE
+            CALL ClearSel
+            CALL DeleteChar(K)
+        END IF
+    CASE 224 TO 233
+        CALL BeforeMove
+        CALL MoveCaret(K)
+    CASE 254
+        CALL QuitEditor
+        EXIT SUB
+    CASE ELSE
+        EXIT SUB
+    END SELECT
+    CALL Refresh(Old)
+END SUB
+
+SUB DeleteChar(K AS INTEGER)
+    IF K = 8 THEN
+        IF CurCol > 1 THEN
+            CALL Checkpoint(2)
+            CurCol = CurCol - 1
+            TEXT DELETE Doc, CurLine, CurCol, 1
+        ELSE
+            IF CurLine > 1 THEN
+                CALL Checkpoint(3)
+                CurLine = CurLine - 1
+                CurCol = TEXTLEN(Doc, CurLine) + 1
+                TEXT JOIN Doc, CurLine
+                Redraw = TRUE
+            END IF
+        END IF
+        EXIT SUB
+    END IF
+    IF CurCol <= TEXTLEN(Doc, CurLine) THEN
+        CALL Checkpoint(2)
+        TEXT DELETE Doc, CurLine, CurCol, 1
+    ELSE
+        IF CurLine < TEXTLINES(Doc) THEN
+            CALL Checkpoint(3)
+            TEXT JOIN Doc, CurLine
+            Redraw = TRUE
+        END IF
+    END IF
+END SUB
+
+SUB MoveCaret(K AS INTEGER)
+    SELECT CASE K
+    CASE 224
+        IF CurLine > 1 THEN
+            CurLine = CurLine - 1
+            CALL ClampCol
+        END IF
+    CASE 225
+        IF CurLine < TEXTLINES(Doc) THEN
+            CurLine = CurLine + 1
+            CALL ClampCol
+        END IF
+    CASE 226
+        IF CurCol > 1 THEN
+            CurCol = CurCol - 1
+        ELSE
+            IF CurLine > 1 THEN
+                CurLine = CurLine - 1
+                CurCol = TEXTLEN(Doc, CurLine) + 1
+            END IF
+        END IF
+    CASE 227
+        IF CurCol <= TEXTLEN(Doc, CurLine) THEN
+            CurCol = CurCol + 1
+        ELSE
+            IF CurLine < TEXTLINES(Doc) THEN
+                CurLine = CurLine + 1
+                CurCol = 1
+            END IF
+        END IF
+    CASE 230
+        CurCol = 1
+        IF (KEYSHIFT AND 4) <> 0 THEN
+            CurLine = 1
+        END IF
+    CASE 231
+        IF (KEYSHIFT AND 4) <> 0 THEN
+            CurLine = TEXTLINES(Doc)
+        END IF
+        CurCol = TEXTLEN(Doc, CurLine) + 1
+    CASE 232
+        CurLine = MAX(1, CurLine - ROWS)
+        TopLine = MAX(1, TopLine - ROWS)
+        CALL ClampCol
+        Redraw = TRUE
+    CASE ELSE
+        CurLine = MIN(TEXTLINES(Doc), CurLine + ROWS)
+        TopLine = MIN(MAX(1, TEXTLINES(Doc) - ROWS + 1), TopLine + ROWS)
+        CALL ClampCol
+        Redraw = TRUE
+    END SELECT
+END SUB
+
+' The character edge on row RLine / RCol nearest pixel MX of the text (0 =
+' before its first character): the first character whose middle MX has not
+' passed, measured as DrawSeg draws them.
+FUNCTION ColAt(MX AS INTEGER) AS INTEGER
+    LOCAL K AS INTEGER
+    LOCAL W AS INTEGER
+    LOCAL A AS INTEGER
+    Seg$ = ""
+    IF RCol <= TEXTLEN(Doc, RLine) + 1 THEN
+        Seg$ = TEXTGET$(Doc, RLine, RCol, COLS)
+    END IF
+    K = 0
+    W = 0
+    WHILE K < LEN(Seg$)
+        A = TEXTWIDTH(MID$(Seg$, K + 1, 1))
+        IF 2 * MX < 2 * W + A THEN
+            RETURN K
+        END IF
+        W = W + A
+        K = K + 1
+    WEND
+    RETURN K
+END FUNCTION
+
+' A press puts the caret at the character edge nearest the pointer (and the
+' anchor there); dragging with the button down moves the caret, selecting
+' from the anchor; the release ends it. Outside the page: the nearest row.
+SUB Mouse
+    LOCAL Old AS INTEGER
+    LOCAL Row AS INTEGER
+    Old = CurLine
+    OldSpan = Span(CurLine)
+    SELECT CASE MOUSEEVENT
+    CASE 1
+        CALL ClearSel
+        Dragging = TRUE
+    CASE 2
+        IF NOT Dragging THEN
+            EXIT SUB
+        END IF
+    CASE ELSE
+        IF NOT Dragging THEN
+            EXIT SUB
+        END IF
+        Dragging = FALSE
+    END SELECT
+    Row = MIN(ROWS - 1, MAX(0, MOUSEY) / LINEH)
+    CALL RowStart(Row)
+    IF RLine > TEXTLINES(Doc) THEN
+        CurLine = TEXTLINES(Doc)
+        CurCol = TEXTLEN(Doc, CurLine) + 1
+    ELSE
+        CurLine = RLine
+        CurCol = RCol + ColAt(MOUSEX - 4)
+        IF Wrap AND CurCol > RCol + COLS - 1 AND RCol + COLS <= TEXTLEN(Doc, CurLine) THEN
+            CurCol = RCol + COLS - 1
+        END IF
+        CALL ClampCol
+    END IF
+    IF MOUSEEVENT = 1 THEN
+        AncLine = CurLine
+        AncCol = CurCol
+    ELSE
+        IF CurLine <> AncLine OR CurCol <> AncCol THEN
+            SelOn = TRUE
+        END IF
+    END IF
+    LastKind = 0
+    CALL Refresh(Old)
+END SUB
+
+' ------------------------------------------------------------- files
+SUB StartDoc
+    CurLine = 1
+    CurCol = 1
+    TopLine = 1
+    LeftCol = 1
+    SelOn = FALSE
+    Marking = FALSE
+    Redraw = TRUE
+    CALL ForgetHistory
+END SUB
+
+SUB LoadFile
+    TEXT LOAD Doc, FileName$
+    N = IOERR
+    CALL StartDoc
+    InTemp = FALSE
+    DocName$ = ""
+    SELECT CASE N
+    CASE 0
+        DocName$ = FileName$
+        Info$ = "Opened " + FileName$
+    CASE 2
+        DocName$ = FileName$
+        Info$ = "New file " + FileName$
+    CASE 247
+        Info$ = "Not opened"
+        MESSAGE "Bad name [" + FileName$ + "]"
+    CASE 246
+        Info$ = "Too big"
+        MESSAGE FileName$ + ": over 30000 bytes"
+    CASE ELSE
+        Info$ = "Not opened"
+        MESSAGE FileName$ + ": error " + STR$(N)
+    END SELECT
+END SUB
+
+' BakName$ = Target$ with the extension .BAK; FALSE if it would be Target$.
+FUNCTION MakeBakName() AS BOOLEAN
+    LOCAL Dot AS INTEGER
+    Dot = INSTR(Target$, ".")
+    IF Dot = 0 THEN
+        BakName$ = Target$ + ".BAK"
+    ELSE
+        BakName$ = LEFT$(Target$, Dot - 1) + ".BAK"
+    END IF
+    RETURN UCASE$(BakName$) <> UCASE$(Target$)
+END FUNCTION
+
+' 1 write TEMPNAME; 2 read it back into Swap and compare; 3 delete
+' NAME.BAK; 4 rename the file to NAME.BAK; 5 rename TEMPNAME to the file.
+' A failure in 1 or 2 leaves everything as it was; later, the text stays in
+' TEMPNAME and the document stays marked as unsaved.
+SUB WriteFile
+    IF LEN(Target$) = 0 THEN
+        MESSAGE "No name: use Save as"
+        EXIT SUB
+    END IF
+    IF NOT MakeBakName() THEN
+        MESSAGE "Not .BAK: " + Target$
+        EXIT SUB
+    END IF
+    TEXT SAVE Doc, TEMPNAME
+    N = IOERR
+    IF N <> 0 THEN
+        MESSAGE "Not saved (" + STR$(N) + ")"
+        KILL TEMPNAME
+        Info$ = "Not saved"
+        EXIT SUB
+    END IF
+    InTemp = TRUE
+    TEXT LOAD Swap, TEMPNAME
+    N = IOERR
+    IF N = 0 AND NOT TEXTSAME(Swap, Doc) THEN
+        N = 251
+    END IF
+    TEXT CLEAR Swap
+    IF N <> 0 THEN
+        MESSAGE "Not saved: check failed (" + STR$(N) + ")"
+        KILL TEMPNAME
+        InTemp = FALSE
+        Info$ = "Not saved"
+        EXIT SUB
+    END IF
+    KILL BakName$
+    N = IOERR
+    IF N = 0 OR N = 2 THEN
+        NAME Target$ AS BakName$
+        N = IOERR
+    END IF
+    IF N <> 0 AND N <> 2 THEN
+        MESSAGE "Only in " + TEMPNAME + " (" + STR$(N) + ")"
+        Info$ = "In " + TEMPNAME
+        EXIT SUB
+    END IF
+    NAME TEMPNAME AS Target$
+    N = IOERR
+    IF N <> 0 THEN
+        MESSAGE "Only in " + TEMPNAME + "; old in " + BakName$ + " (" + STR$(N) + ")"
+        Info$ = "In " + TEMPNAME
+        EXIT SUB
+    END IF
+    InTemp = FALSE
+    DocName$ = Target$
+    Info$ = "Saved " + Target$
+END SUB
+
+SUB SaveDoc
+    Target$ = DocName$
+    CALL WriteFile
+    CALL ShowStatus
+END SUB
+
+FUNCTION MayDiscard() AS BOOLEAN
+    IF NOT Unsaved() THEN
+        RETURN TRUE
+    END IF
+    Answer = ASK("Unsaved changes", "Save", "Discard", "Cancel")
+    IF Answer = 1 THEN
+        Target$ = DocName$
+        CALL WriteFile
+        RETURN NOT Unsaved()
+    END IF
+    RETURN Answer = 2
+END FUNCTION
+
+SUB QuitEditor
+    IF MayDiscard() THEN
+        EXIT
+    END IF
+END SUB
+
+SUB ShowTools
+    GoLine = CurLine
+    FileName$ = DocName$
+    SHOW Tools
+END SUB
+
+SUB ShowFinder
+    SHOW Finder
+END SUB
+
+SUB BackToMain
+    SHOW Main
+END SUB
+
+SUB OpenDoc
+    IF LEN(FileName$) = 0 THEN
+        MESSAGE "Type a name"
+        EXIT SUB
+    END IF
+    IF MayDiscard() THEN
+        CALL LoadFile
+    END IF
+    SHOW Main
+END SUB
+
+SUB SaveAs
+    IF LEN(FileName$) = 0 THEN
+        MESSAGE "Type a name"
+        EXIT SUB
+    END IF
+    Answer = ASK("Replace " + FileName$ + "?", "Save", "Cancel")
+    IF Answer = 1 THEN
+        Target$ = FileName$
+        CALL WriteFile
+    END IF
+    SHOW Main
+END SUB
+
+' ------------------------------------------------------- find / replace
+FUNCTION SearchFrom(Line AS INTEGER, Col AS INTEGER) AS BOOLEAN
+    IF LEN(FindText$) = 0 THEN
+        Info$ = "Nothing to find"
+        RETURN FALSE
+    END IF
+    N = TEXTFIND(Doc, FindText$, Line, Col)
+    IF N = 0 THEN
+        Info$ = "Not found"
+        RETURN FALSE
+    END IF
+    CurLine = N
+    CurCol = TEXTCOL(Doc)
+    Info$ = "Found"
+    CALL ClearSel
+    CALL Follow
+    Redraw = TRUE
+    RETURN TRUE
+END FUNCTION
+
+FUNCTION SearchNext() AS BOOLEAN
+    IF CurCol <= TEXTLEN(Doc, CurLine) THEN
+        RETURN SearchFrom(CurLine, CurCol + 1)
+    END IF
+    IF CurLine < TEXTLINES(Doc) THEN
+        RETURN SearchFrom(CurLine + 1, 1)
+    END IF
+    Info$ = "Not found"
+    RETURN FALSE
+END FUNCTION
+
+SUB FindFirst
+    IF SearchFrom(1, 1) THEN
+        LastKind = 0
+    END IF
+    SHOW Main
+END SUB
+
+SUB FindNext
+    LOCAL Old AS INTEGER
+    Old = CurLine
+    IF SearchNext() THEN
+        LastKind = 0
+    END IF
+    CALL Refresh(Old)
+END SUB
+
+' TRUE if the caret is at an occurrence of FindText$.
+FUNCTION AtMatch() AS BOOLEAN
+    IF LEN(FindText$) = 0 THEN
+        RETURN FALSE
+    END IF
+    RETURN TEXTGET$(Doc, CurLine, CurCol, LEN(FindText$)) = FindText$
+END FUNCTION
+
+' Replace the occurrence at the caret (else find the first one), then move
+' to the next.
+SUB ReplaceOne
+    IF NOT AtMatch() THEN
+        IF NOT SearchFrom(CurLine, CurCol) THEN
+            SHOW Main
+            EXIT SUB
+        END IF
+    END IF
+    IF TEXTFREE(Doc) < LEN(ReplText$) THEN
+        Info$ = "No room"
+        SHOW Main
+        EXIT SUB
+    END IF
+    CALL Checkpoint(3)
+    TEXT DELETE Doc, CurLine, CurCol, LEN(FindText$)
+    TEXT INSERT Doc, CurLine, CurCol, ReplText$
+    CurCol = CurCol + LEN(ReplText$)
+    Info$ = "Replaced"
+    IF SearchFrom(CurLine, CurCol) THEN
+        Info$ = "Replaced"
+    END IF
+    Redraw = TRUE
+    SHOW Main
+END SUB
+
+SUB ReplaceAll
+    LOCAL Count AS INTEGER
+    LOCAL L AS INTEGER
+    LOCAL C AS INTEGER
+    IF LEN(FindText$) = 0 THEN
+        Info$ = "Nothing to find"
+        SHOW Main
+        EXIT SUB
+    END IF
+    CALL Checkpoint(3)
+    Count = 0
+    L = 1
+    C = 1
+    N = TEXTFIND(Doc, FindText$, L, C)
+    WHILE N > 0
+        IF TEXTFREE(Doc) < LEN(ReplText$) THEN
+            MESSAGE "Full after " + STR$(Count)
+            EXIT WHILE
+        END IF
+        L = N
+        C = TEXTCOL(Doc)
+        TEXT DELETE Doc, L, C, LEN(FindText$)
+        TEXT INSERT Doc, L, C, ReplText$
+        Count = Count + 1
+        C = C + LEN(ReplText$)
+        N = TEXTFIND(Doc, FindText$, L, C)
+    WEND
+    Info$ = "Replaced " + STR$(Count)
+    CALL ClearSel
+    CALL ClampCol
+    Redraw = TRUE
+    SHOW Main
+END SUB
+
+SUB GoToLine
+    CurLine = MIN(MAX(1, GoLine), TEXTLINES(Doc))
+    CurCol = 1
+    CALL ClearSel
+    CALL Follow
+    Redraw = TRUE
+    SHOW Main
+END SUB
+
+Wrap = TRUE
+FileName$ = "EDTEST.MD"
+CALL LoadFile
+END

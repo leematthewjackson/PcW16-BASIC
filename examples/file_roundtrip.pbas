@@ -1,0 +1,24 @@
+' File Round Trip (M4 example): save a known string to a disposable file,
+' load it back and compare; then save a SHORTER string over it and check
+' that the file was replaced, not partly overwritten.
+' Writes only PBRTRIP.TXT in the program's folder (default \PCW\FOLDER01).
+DIM Sent$ AS STRING
+DIM Back$ AS STRING
+Sent$ = "PcW16 round trip 42"
+FILESAVE "PBRTRIP.TXT", Sent$
+FILELOAD "PBRTRIP.TXT", Back$
+IF Back$ = Sent$ THEN
+    MESSAGE "Trip 1 OK: " + Back$ + " (" + STR$(LEN(Back$)) + " letters)"
+ELSE
+    MESSAGE "Trip 1 MISMATCH: " + Back$
+END IF
+Sent$ = "Short"
+FILESAVE "PBRTRIP.TXT", Sent$
+Back$ = "not loaded"
+FILELOAD "PBRTRIP.TXT", Back$
+IF Back$ = Sent$ THEN
+    MESSAGE "Trip 2 OK: " + Back$ + " (" + STR$(LEN(Back$)) + " letters)"
+ELSE
+    MESSAGE "Trip 2 MISMATCH: " + Back$
+END IF
+END

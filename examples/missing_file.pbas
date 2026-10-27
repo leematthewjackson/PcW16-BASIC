@@ -1,0 +1,10 @@
+' Missing File (M4 example): load a file that must not exist and show that
+' the program reports it, keeps going, and leaves the variable unchanged.
+' Reads only; never writes. PBNOFILE.TXT must not exist in the folder.
+DIM Got$ AS STRING
+Got$ = "unchanged"
+FILELOAD "PBNOFILE.TXT", Got$
+MESSAGE "Still running; Got$ is " + Got$
+FILELOAD "PBNOFILE.TXT", Got$
+MESSAGE "Second try done; Got$ is " + Got$
+END

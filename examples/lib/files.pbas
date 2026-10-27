@@ -1,0 +1,54 @@
+' files.pbas: a file name with the extension a program
+' needs, and a file replaced only once its new version is complete.
+' INCLUDE "lib/files.pbas" in a program with files. docs/libraries/files.md.
+'
+' Why. A program that keeps several files under one name (FORM.DSN, a
+' picture FORM.PBI, a listing FORM.BAS) must never write one where another
+' is: a name typed with its own extension (FORM.DSN when exporting a
+' picture) once replaced a design with a picture (seen in XAnne). And
+' DB SAVE and BITMAP SAVE keep their previous version and their temporary
+' file as NAME.BAK and NAME.NEW, the name's extension replaced
+' (LANGUAGE-SPEC §5.9): FORM.DSN and FORM.PBI share FORM.BAK, so saving
+' the picture with BITMAP SAVE would replace the design's backup. So:
+'   FUNCTION SafeName(Ext$ AS STRING) AS INTEGER
+'       SafeOut$ (set it to the name typed first) in capitals, with any
+'       extension typed replaced by Ext$ (".PBI"; "" for none). 0 done,
+'       1 no name, 2 more than 8 characters before the dot.
+'   FUNCTION SafeReplace() AS INTEGER
+'       the file SafeOut$ deleted (if it is there) and SafeTemp$ renamed
+'       to it: the IOERR of that (0 done). Write the new version to
+'       SafeTemp$ first and call this only when it is complete; if the
+'       rename fails the new version is still in SafeTemp$. Give SafeTemp$
+'       a name of its own (its .NEW and .BAK too), e.g. "DSGNTMP.PBI", and
+'       refuse it for SafeOut$: the same name loses the new version (KI-99).
+' The names go in and out through SafeOut$ and SafeTemp$, not parameters:
+' a STRING parameter costs the resident block its whole capacity.
+' Names: everything here starts with Safe.
+DIM SafeOut$ AS STRING * 13
+DIM SafeTemp$ AS STRING * 13
+
+FUNCTION SafeName(Ext$ AS STRING) AS INTEGER
+    LOCAL D AS INTEGER
+    SafeOut$ = UCASE$(SafeOut$)
+    D = INSTR(SafeOut$, ".")
+    IF D > 0 THEN
+        SafeOut$ = LEFT$(SafeOut$, D - 1)
+    END IF
+    IF LEN(SafeOut$) = 0 THEN
+        RETURN 1
+    END IF
+    IF LEN(SafeOut$) > 8 THEN
+        RETURN 2
+    END IF
+    SafeOut$ = SafeOut$ + Ext$
+    RETURN 0
+END FUNCTION
+
+FUNCTION SafeReplace() AS INTEGER
+    KILL SafeOut$
+    IF IOERR <> 0 AND IOERR <> 2 THEN
+        RETURN IOERR
+    END IF
+    NAME SafeTemp$ AS SafeOut$
+    RETURN IOERR
+END FUNCTION

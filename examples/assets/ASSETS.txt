@@ -1,0 +1,10 @@
+# The example programs' pictures: PNG sources here, PBI1 files for the
+# PcW16 made by  python3 tools/pbimage.py build examples/assets/ASSETS.txt OUTDIR
+# (the packages and the tests do this). docs/M13-GRAPHICS-ASSETS.md.
+# target       command  source              options
+P2ICONS.PBI    sheet    paint2-icons.png    --frame 24,24
+JHERO.PBI      sheet    jumper-hero.png     --frame 16,24 --mask JHEROM.PBI
+JCOIN.PBI      sheet    jumper-coin.png     --frame 8,8 --mask JCOINM.PBI
+JBUG.PBI       sheet    jumper-beetle.png   --frame 16,12 --mask JBUGM.PBI
+T2ICONS.PBI    sheet    tutorial-icons.png  --frame 24,24
+T3HERO.PBI     sheet    tutorial-hero.png   --frame 16,16 --mask T3HEROM.PBI

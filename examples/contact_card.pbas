@@ -1,0 +1,93 @@
+' Contact card (M6 Phase 1 example): three windows shown one at a time.
+' The main window summarises the card; Edit changes it (Cancel puts the
+' saved values back); Options chooses what the summary shows. The menu
+' bar works in every window.
+DIM SavedName$ AS STRING
+DIM SavedPhone$ AS STRING
+DIM SavedAge AS INTEGER
+DIM SavedKind AS INTEGER
+DIM Line1$ AS STRING
+DIM Line2$ AS STRING
+DIM Line3$ AS STRING
+WINDOW Main, "Contact card"
+LABEL Line1$
+LABEL Line2$
+LABEL Line3$
+BUTTON "Edit", OpenEdit, DEFAULT
+BUTTON "Options", OpenOptions
+BUTTON "Quit", Finish, KEY STOP
+WINDOW Edit, "Edit contact", LARGE
+TEXTBOX Person$, "Name"
+TEXTBOX Phone$, "Phone"
+NUMBERBOX Age, "Age", MIN 0, MAX 130, SPIN
+RADIO Kind, "Friend", "Family", "Work"
+BUTTON "Save", SaveCard, DEFAULT, KEY GREEN
+BUTTON "Cancel", CancelEdit, KEY RED
+WINDOW Options, "Options"
+CHECKBOX ShowAge, "Show the age"
+CHECKBOX ShowPhone, "Show the phone number"
+BUTTON "Done", CloseOptions, DEFAULT
+MENU "Card"
+    ITEM "Edit", OpenEdit, KEY "E"
+    ITEM "Options", OpenOptions
+    ITEM "-"
+    ITEM "Quit", Finish
+END MENU
+SUB Summary
+    Line1$ = LEFT$(SavedName$, 24)
+    IF LEN(Line1$) = 0 THEN
+        Line1$ = "(no name yet)"
+    END IF
+    Line2$ = ""
+    IF ShowPhone THEN
+        Line2$ = "Tel " + LEFT$(SavedPhone$, 20)
+    END IF
+    IF SavedKind = 1 THEN
+        Line3$ = "Friend"
+    ELSE
+        IF SavedKind = 2 THEN
+            Line3$ = "Family"
+        ELSE
+            Line3$ = "Work"
+        END IF
+    END IF
+    IF ShowAge THEN
+        Line3$ = Line3$ + ", age " + STR$(SavedAge)
+    END IF
+END SUB
+SUB OpenEdit
+    Person$ = SavedName$
+    Phone$ = SavedPhone$
+    Age = SavedAge
+    Kind = SavedKind
+    SHOW Edit
+    FOCUS Person$
+END SUB
+SUB SaveCard
+    SavedName$ = Person$
+    SavedPhone$ = Phone$
+    SavedAge = Age
+    IF Kind > 0 THEN
+        SavedKind = Kind
+    END IF
+    CALL Summary
+    SHOW Main
+END SUB
+SUB CancelEdit
+    SHOW Main
+END SUB
+SUB OpenOptions
+    SHOW Options
+END SUB
+SUB CloseOptions
+    CALL Summary
+    SHOW Main
+END SUB
+SUB Finish
+    EXIT
+END SUB
+SavedKind = 1
+SavedAge = 30
+ShowPhone = TRUE
+CALL Summary
+END

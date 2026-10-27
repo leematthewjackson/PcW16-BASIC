@@ -1,0 +1,103 @@
+' M6 Phase 2 edge cases (XAnne acceptance, docs/M6-PHASE2-ACCEPTANCE.md):
+' a 40-item list in 12 rows (scrolling, handle size), an empty 2-row list
+' that is filled later, a drop-down whose item count changes, a slider
+' from -100 to 100, a 24-character item, and three deliberate runtime errors.
+DIM Big$(40) AS STRING
+DIM Few$(3) AS STRING
+DIM FewCount AS INTEGER
+DIM Opts$(4) AS STRING
+DIM OptCount AS INTEGER
+DIM I AS INTEGER
+DIM Info$ AS STRING
+DIM Info2$ AS STRING
+WINDOW Lists, "Edge cases: long list", LARGE
+LIST BigPick, Big$, 40, ROWS 12, CHANGE BigChanged, ACTION BigOpened
+LABEL Info$
+BUTTON "Last", GoLast
+BUTTON "None", GoNone
+BUTTON "Bad pick", BadPick
+BUTTON "More", OpenMore, DEFAULT
+BUTTON "Quit", Finish, KEY STOP
+WINDOW More, "Edge cases: small controls", LARGE
+LIST FewPick, Few$, FewCount, ROWS 2, CHANGE FewChanged
+CHOICE Opt, Opts$, OptCount, "Option", CHANGE OptChanged
+SLIDER Level, MIN -100, MAX 100, "Level", CHANGE LevelMoved
+LABEL Info2$
+BUTTON "Fill", Fill
+BUTTON "Fewer", Fewer
+BUTTON "Bad text", BadText
+BUTTON "No choice", NoChoice
+BUTTON "Back", GoBack, DEFAULT
+SUB BigChanged
+    Info$ = "Picked " + LEFT$(Big$(BigPick), 17)
+END SUB
+SUB BigOpened
+    Info$ = "Opened " + STR$(BigPick)
+END SUB
+SUB GoLast
+    BigPick = 40
+    Info$ = "Selected the last item"
+END SUB
+SUB GoNone
+    BigPick = 0
+    Info$ = "No selection"
+END SUB
+SUB BadPick
+    ' deliberate: 41 is outside the list -> "list position out of range"
+    BigPick = 41
+END SUB
+SUB OpenMore
+    SHOW More
+END SUB
+SUB FewChanged
+    Info2$ = "Few " + STR$(FewPick)
+END SUB
+SUB OptChanged
+    Info2$ = "Option " + STR$(Opt) + " of " + STR$(OptCount)
+END SUB
+SUB LevelMoved
+    Info2$ = "Level " + STR$(Level)
+END SUB
+SUB Fill
+    FewCount = 3
+    OptCount = 4
+    Info2$ = "Filled"
+END SUB
+SUB Fewer
+    FewCount = 0
+    FewPick = 0
+    OptCount = 1
+    Opt = 1
+    Level = -100
+    Info2$ = "Emptied"
+END SUB
+SUB BadText
+    ' deliberate: a 25-character item -> "string too long" at the LIST line
+    Few$(1) = "abcdefghijklmnopqrstuvwxy"
+    FewCount = 1
+END SUB
+SUB NoChoice
+    ' deliberate: a CHOICE must show an item -> runtime error at the CHOICE line
+    Opt = 0
+END SUB
+SUB GoBack
+    SHOW Lists
+END SUB
+SUB Finish
+    EXIT
+END SUB
+FOR I = 1 TO 40
+    Big$(I) = "Row " + STR$(I)
+NEXT I
+Big$(40) = "Row 40 has 24 characters"
+Few$(1) = "First"
+Few$(2) = "Second"
+Few$(3) = "Third"
+Opts$(1) = "One"
+Opts$(2) = "Two"
+Opts$(3) = "Three"
+Opts$(4) = "Four"
+OptCount = 2
+Opt = 1
+Info$ = "Scroll, pick or open"
+END

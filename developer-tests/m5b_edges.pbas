@@ -1,0 +1,23 @@
+' M5b XAnne edge cases: signed division, VAL boundaries, ASC/CHR$, INSTR
+' edges and string ordering; ends on purpose with division by zero.
+DIM A AS INTEGER
+DIM B AS INTEGER
+DIM S$ AS STRING
+A = -7
+B = 2
+MESSAGE "1 " + STR$(A / B) + " " + STR$(A MOD B) + " " + STR$(7 / -2) + " " + STR$(7 MOD -2)
+A = -32768
+B = -1
+MESSAGE "2 " + STR$(A / B) + " " + STR$(A MOD B) + " " + STR$(A / 7)
+MESSAGE "3 " + STR$(VAL("  -0012x")) + " " + STR$(VAL("")) + " " + STR$(VAL("+32767")) + " " + STR$(VAL("-32768"))
+MESSAGE "4 " + STR$(ASC("a")) + " " + STR$(ASC("")) + " " + CHR$(80) + CHR$(99) + CHR$(87)
+S$ = "banana"
+MESSAGE "5 " + STR$(INSTR(S$, "an")) + " " + STR$(INSTR(4, S$, "an")) + " " + STR$(INSTR(S$, "x")) + " " + STR$(INSTR(7, S$, "")) + " " + STR$(INSTR(8, S$, ""))
+IF "Zebra" < "apple" THEN
+    MESSAGE "6 capitals sort first"
+END IF
+B = 0
+MESSAGE "7 about to divide by " + STR$(B)
+MESSAGE STR$(A / B)
+MESSAGE "8 never shown"
+END

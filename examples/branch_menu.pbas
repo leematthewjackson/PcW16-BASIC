@@ -1,0 +1,20 @@
+' branch_menu.pbas: a 3-level nested IF/ELSE chain picks one of four tiers.
+' Points 72 + Bonus 5 = 77, so XAnne shows exactly one alert: "Tier: SILVER (77)".
+DIM Points AS INTEGER
+DIM Bonus AS INTEGER
+Points = 8 * 9            ' 72
+Bonus = 5
+IF Points + Bonus >= 90 THEN
+    MESSAGE "Tier: GOLD (" + STR$(Points + Bonus) + ")"
+ELSE
+    IF Points + Bonus >= 70 THEN
+        MESSAGE "Tier: SILVER (" + STR$(Points + Bonus) + ")"
+    ELSE
+        IF Points + Bonus >= 50 THEN
+            MESSAGE "Tier: BRONZE (" + STR$(Points + Bonus) + ")"
+        ELSE
+            MESSAGE "Tier: NONE (" + STR$(Points + Bonus) + ")"
+        END IF
+    END IF
+END IF
+END

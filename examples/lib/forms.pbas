@@ -1,0 +1,143 @@
+' forms.pbas: reusable checks for data-entry forms.
+' INCLUDE "lib/forms.pbas" near the top of a program, before its own SUBs.
+'
+' A form check collects the first problem only:
+'     CALL FormStart
+'     CALL FormRequire(Name$, "Name")
+'     CALL FormPhone(Phone$, "Phone")
+'     CALL FormEmail(Mail$, "E-mail")
+'     IF NOT FormOK() THEN
+'         MESSAGE FormError$
+'     END IF
+' Rules (documented in docs/libraries/forms.md):
+'   required  - not empty and not only spaces;
+'   phone     - empty, or digits with optional spaces, + ( ) -, at least
+'               3 digits (": a bad character", ": too short");
+'   e-mail    - empty, or exactly one @ with text before it and a dot with
+'               text on both sides after it; no spaces;
+'   number    - empty is refused; digits with an optional leading -,
+'               between Low and High.
+' The library declares FormError$ and the helper functions below; their
+' names start with Form or are listed here, so a program must not reuse
+' them: IsBlank, IsDigits, PadRight$, Confirm.
+DIM FormError$ AS STRING * 60
+
+FUNCTION IsBlank(S$ AS STRING) AS BOOLEAN
+    RETURN LEN(TRIM$(S$)) = 0
+END FUNCTION
+
+' TRUE if S$ is one or more digits 0-9.
+FUNCTION IsDigits(S$ AS STRING) AS BOOLEAN
+    LOCAL I AS INTEGER
+    LOCAL C AS INTEGER
+    IF LEN(S$) = 0 THEN
+        RETURN FALSE
+    END IF
+    FOR I = 1 TO LEN(S$)
+        C = ASC(MID$(S$, I, 1))
+        IF C < 48 OR C > 57 THEN
+            RETURN FALSE
+        END IF
+    NEXT I
+    RETURN TRUE
+END FUNCTION
+
+' S$ cut or padded with spaces to exactly N characters (for aligned lists).
+FUNCTION PadRight$(S$ AS STRING, N AS INTEGER) AS STRING
+    IF LEN(S$) >= N THEN
+        RETURN LEFT$(S$, N)
+    END IF
+    RETURN S$ + SPACE$(N - LEN(S$))
+END FUNCTION
+
+' Ask Q$ with Yes / No; TRUE for Yes.
+FUNCTION Confirm(Q$ AS STRING) AS BOOLEAN
+    LOCAL A AS INTEGER
+    A = ASK(Q$, "Yes", "No")
+    RETURN A = 1
+END FUNCTION
+
+SUB FormStart
+    FormError$ = ""
+END SUB
+
+FUNCTION FormOK() AS BOOLEAN
+    RETURN LEN(FormError$) = 0
+END FUNCTION
+
+' Record Why$ as the form's problem unless one is already recorded.
+SUB FormFail(Why$ AS STRING)
+    IF LEN(FormError$) = 0 THEN
+        FormError$ = Why$
+    END IF
+END SUB
+
+SUB FormRequire(V$ AS STRING, Label$ AS STRING)
+    IF IsBlank(V$) THEN
+        CALL FormFail(Label$ + " is required")
+    END IF
+END SUB
+
+SUB FormPhone(V$ AS STRING, Label$ AS STRING)
+    LOCAL I AS INTEGER
+    LOCAL C AS INTEGER
+    LOCAL Digits AS INTEGER
+    IF LEN(V$) = 0 THEN
+        EXIT SUB
+    END IF
+    Digits = 0
+    FOR I = 1 TO LEN(V$)
+        C = ASC(MID$(V$, I, 1))
+        IF C >= 48 AND C <= 57 THEN
+            Digits = Digits + 1
+        ELSE
+            IF C <> 32 AND C <> 43 AND C <> 40 AND C <> 41 AND C <> 45 THEN
+                CALL FormFail(Label$ + ": a bad character")
+                EXIT SUB
+            END IF
+        END IF
+    NEXT I
+    IF Digits < 3 THEN
+        CALL FormFail(Label$ + ": too short")
+    END IF
+END SUB
+
+SUB FormEmail(V$ AS STRING, Label$ AS STRING)
+    LOCAL At AS INTEGER
+    LOCAL Dot AS INTEGER
+    LOCAL Rest$ AS STRING
+    IF LEN(V$) = 0 THEN
+        EXIT SUB
+    END IF
+    At = INSTR(V$, "@")
+    IF At < 2 OR INSTR(V$, " ") > 0 THEN
+        CALL FormFail(Label$ + " is not valid")
+        EXIT SUB
+    END IF
+    Rest$ = MID$(V$, At + 1, LEN(V$))
+    Dot = INSTR(Rest$, ".")
+    IF INSTR(Rest$, "@") > 0 OR Dot < 2 OR Dot = LEN(Rest$) THEN
+        CALL FormFail(Label$ + " is not valid")
+    END IF
+END SUB
+
+SUB FormNumber(V$ AS STRING, Label$ AS STRING, Low AS INTEGER, High AS INTEGER)
+    LOCAL D$ AS STRING
+    LOCAL N AS INTEGER
+    D$ = TRIM$(V$)
+    IF LEFT$(D$, 1) = "-" THEN
+        D$ = MID$(D$, 2, LEN(D$))
+    END IF
+    IF NOT IsDigits(D$) OR LEN(D$) > 5 THEN
+        CALL FormFail(Label$ + " is not valid")
+        EXIT SUB
+    END IF
+    IF LEN(D$) = 5 AND D$ > "32767" THEN
+        CALL FormFail(Label$ + " must be " + STR$(Low) + " to " + STR$(High))
+        EXIT SUB
+    END IF
+    N = VAL(TRIM$(V$))
+    IF N < Low OR N > High THEN
+        CALL FormFail(Label$ + " must be " + STR$(Low) + " to " + STR$(High))
+    END IF
+END SUB

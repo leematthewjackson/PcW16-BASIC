@@ -1,0 +1,168 @@
+' chart.pbas: bar and line charts on the canvas.
+' INCLUDE "lib/chart.pbas" near the top of a program with a CANVAS.
+'
+' Data
+'   ChartN values ChartV(1..ChartN) (0 to 20000) with labels ChartL$(i),
+'   at most 12. Set them, then CALL ChartBars or ChartLines.
+'
+' Drawing (inside the rectangle X, Y, W, H of the canvas; W at least 120,
+' H at least 80; the rectangle is cleared first)
+'   SUB ChartBars(X, Y, W, H)    a bar a value, the value above its bar
+'   SUB ChartLines(X, Y, W, H)   the values joined by lines, a dot at each
+' Both draw a scale on the left from 0 to ChartTop, a "nice" number (1, 2
+' or 5 times a power of ten, at least the largest value: FUNCTION
+' ChartNiceTop), divided into ChartDiv steps, and the labels under the
+' plot. A label too wide for its slot is shown shortened, ending in "."
+' (the whole label is the program's to show elsewhere, e.g. in a table).
+'
+' Numbers
+'   FUNCTION ChartScale(V, Size) AS INTEGER: V of ChartTop as a length of
+'   Size pixels, rounded to the nearest (exact: done in REAL arithmetic, so
+'   no product overflows). A bar of value V is ChartScale(V, plot height)
+'   pixels high. ChartSelected (0 none) is drawn in a darker shade.
+'
+' Names: everything here starts with Chart; a program must not reuse them.
+CONST CHARTMAX = 12
+DIM ChartV(12) AS INTEGER
+DIM ChartL$(12) AS STRING * 12
+DIM ChartN AS INTEGER
+DIM ChartTop AS INTEGER
+DIM ChartDiv AS INTEGER
+DIM ChartSelected AS INTEGER
+DIM ChartPX AS INTEGER
+DIM ChartPY AS INTEGER
+DIM ChartPW AS INTEGER
+DIM ChartPH AS INTEGER
+DIM ChartSlot AS INTEGER
+
+FUNCTION ChartNiceTop(Max AS INTEGER) AS INTEGER
+    LOCAL P AS INTEGER
+    IF Max <= 1 THEN
+        RETURN 1
+    END IF
+    P = 1
+    WHILE P <= 10000
+        IF Max <= P THEN
+            RETURN P
+        END IF
+        IF Max <= 2 * P THEN
+            RETURN 2 * P
+        END IF
+        IF P <= 5000 AND Max <= 5 * P THEN
+            RETURN 5 * P
+        END IF
+        IF P = 10000 THEN
+            RETURN 20000
+        END IF
+        P = P * 10
+    WEND
+    RETURN 20000
+END FUNCTION
+
+FUNCTION ChartScale(V AS INTEGER, Size AS INTEGER) AS INTEGER
+    RETURN CINT(REAL(V) * Size / ChartTop)
+END FUNCTION
+
+' The scale, the axes and the labels; sets the plot area ChartPX .. ChartPH
+' and the slot width.
+SUB ChartFrame(X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    LOCAL I AS INTEGER
+    LOCAL Max AS INTEGER
+    LOCAL T AS INTEGER
+    LOCAL V$ AS STRING
+    DRAW FILL X, Y, W, H, 8
+    Max = 0
+    FOR I = 1 TO ChartN
+        Max = MAX(Max, ChartV(I))
+    NEXT I
+    ChartTop = ChartNiceTop(Max)
+    IF ChartTop >= 10 THEN
+        ChartDiv = 5
+    ELSE
+        ChartDiv = ChartTop
+    END IF
+    ChartPX = X + 46
+    ChartPY = Y + 8
+    ChartPW = W - 50
+    ChartPH = H - 30
+    IF ChartN > 0 THEN
+        ChartSlot = ChartPW / ChartN
+    ELSE
+        ChartSlot = ChartPW
+    END IF
+    FOR I = 0 TO ChartDiv
+        T = ChartPY + ChartPH - ChartScale(ChartTop / ChartDiv * I, ChartPH)
+        DRAW LINE ChartPX - 4, T, ChartPX - 1, T
+        V$ = STR$(ChartTop / ChartDiv * I)
+        DRAW TEXT ChartPX - 6 - TEXTWIDTH(V$), T - 8, V$
+    NEXT I
+    DRAW LINE ChartPX - 1, ChartPY, ChartPX - 1, ChartPY + ChartPH
+    DRAW LINE ChartPX - 1, ChartPY + ChartPH, ChartPX + ChartPW - 1, ChartPY + ChartPH
+    FOR I = 1 TO ChartN
+        CALL ChartLabel(I)
+    NEXT I
+END SUB
+
+' Label I centred under its slot, shortened to fit.
+SUB ChartLabel(I AS INTEGER)
+    LOCAL L$ AS STRING
+    L$ = ChartL$(I)
+    IF TEXTWIDTH(L$) > ChartSlot - 2 THEN
+        WHILE LEN(L$) > 0 AND TEXTWIDTH(L$ + ".") > ChartSlot - 2
+            L$ = LEFT$(L$, LEN(L$) - 1)
+        WEND
+        L$ = L$ + "."
+    END IF
+    IF TEXTWIDTH(L$) <= ChartSlot THEN
+        DRAW TEXT ChartPX + (I - 1) * ChartSlot + (ChartSlot - TEXTWIDTH(L$)) / 2, ChartPY + ChartPH + 4, L$
+    END IF
+END SUB
+
+SUB ChartBars(X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    LOCAL I AS INTEGER
+    LOCAL BH AS INTEGER
+    LOCAL BW AS INTEGER
+    LOCAL BX AS INTEGER
+    LOCAL V$ AS STRING
+    CALL ChartFrame(X, Y, W, H)
+    BW = MAX(ChartSlot * 2 / 3, 1)
+    FOR I = 1 TO ChartN
+        BH = ChartScale(ChartV(I), ChartPH)
+        BX = ChartPX + (I - 1) * ChartSlot + (ChartSlot - BW) / 2
+        IF BH > 0 THEN
+            IF I = ChartSelected THEN
+                DRAW FILL BX, ChartPY + ChartPH - BH, BW, BH, 1
+            ELSE
+                DRAW FILL BX, ChartPY + ChartPH - BH, BW, BH, 4
+            END IF
+            DRAW BOX BX, ChartPY + ChartPH - BH, BW, BH
+        END IF
+        V$ = STR$(ChartV(I))
+        IF BH + 16 <= ChartPH AND TEXTWIDTH(V$) <= ChartSlot THEN
+            DRAW TEXT BX + (BW - TEXTWIDTH(V$)) / 2, ChartPY + ChartPH - BH - 16, V$
+        END IF
+    NEXT I
+END SUB
+
+SUB ChartLines(X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    LOCAL I AS INTEGER
+    LOCAL PX AS INTEGER
+    LOCAL PY AS INTEGER
+    LOCAL QX AS INTEGER
+    LOCAL QY AS INTEGER
+    CALL ChartFrame(X, Y, W, H)
+    FOR I = 1 TO ChartN
+        QX = ChartPX + (I - 1) * ChartSlot + ChartSlot / 2
+        QY = ChartPY + ChartPH - ChartScale(ChartV(I), ChartPH)
+        IF I > 1 THEN
+            DRAW LINE PX, PY, QX, QY
+        END IF
+        IF I = ChartSelected THEN
+            DRAW FILL QX - 3, QY - 3, 7, 7
+        ELSE
+            DRAW FILL QX - 2, QY - 2, 5, 5
+        END IF
+        PX = QX
+        PY = QY
+    NEXT I
+END SUB

@@ -1,0 +1,137 @@
+' scene.pbas: objects on a CANVAS in a stacking order, found by
+' pointing. INCLUDE "lib/geom.pbas" first, then "lib/scene.pbas".
+' docs/libraries/scene.md.
+'
+' An object is a number 1..SceneN with a rectangle SceneX(I), SceneY(I),
+' SceneW(I), SceneH(I) (its bounds: where it can be clicked and what it may
+' cover). Everything else about an object (its kind, colour, text, ...)
+' is the program's own, in its own arrays indexed by the same number.
+' SceneOrder(1..SceneN) is the stacking order, back to front: the object
+' at SceneOrder(SceneN) is drawn last and is on top.
+'   SUB SceneAdd(X, Y, W, H)        a new object on top: SceneNew is its number
+'   SUB SceneRemove(I)              object I removed; objects above it move
+'                                   down one number (the program moves its
+'                                   own arrays the same way: SceneRemoved
+'                                   tells it which number went)
+'   FUNCTION SceneAt(X, Y) AS INTEGER   the topmost object holding X, Y (0 none)
+'   SUB SceneToFront(I), SUB SceneToBack(I)   restack object I
+'   FUNCTION SceneDepth(I) AS INTEGER  where object I is in the order (1 = back)
+'   SUB SceneDirty(X, Y, W, H)  add a rectangle to the area to redraw;
+'       SceneDirtyX, Y, W, H is the union so far (SceneDirtyW 0: nothing);
+'       SceneClean empties it. The program redraws its background there,
+'       then every object (back to front) that meets it.
+' At most 100 objects (500 INTEGERs: 1000 bytes of the program's 16K).
+' Names: everything here starts with Scene.
+CONST SCENEMAX = 100
+DIM SceneN AS INTEGER
+DIM SceneX(100) AS INTEGER
+DIM SceneY(100) AS INTEGER
+DIM SceneW(100) AS INTEGER
+DIM SceneH(100) AS INTEGER
+DIM SceneOrder(100) AS INTEGER
+DIM SceneNew AS INTEGER
+DIM SceneRemoved AS INTEGER
+DIM SceneDirtyX AS INTEGER
+DIM SceneDirtyY AS INTEGER
+DIM SceneDirtyW AS INTEGER
+DIM SceneDirtyH AS INTEGER
+
+SUB SceneAdd(X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    IF SceneN >= SCENEMAX THEN
+        SceneNew = 0
+        EXIT SUB
+    END IF
+    SceneN = SceneN + 1
+    SceneNew = SceneN
+    SceneX(SceneN) = X
+    SceneY(SceneN) = Y
+    SceneW(SceneN) = W
+    SceneH(SceneN) = H
+    SceneOrder(SceneN) = SceneN
+END SUB
+
+FUNCTION SceneDepth(I AS INTEGER) AS INTEGER
+    LOCAL K AS INTEGER
+    FOR K = 1 TO SceneN
+        IF SceneOrder(K) = I THEN
+            RETURN K
+        END IF
+    NEXT K
+    RETURN 0
+END FUNCTION
+
+SUB SceneRemove(I AS INTEGER)
+    LOCAL K AS INTEGER
+    LOCAL D AS INTEGER
+    IF I < 1 OR I > SceneN THEN
+        EXIT SUB
+    END IF
+    D = SceneDepth(I)
+    FOR K = D TO SceneN - 1
+        SceneOrder(K) = SceneOrder(K + 1)
+    NEXT K
+    FOR K = I TO SceneN - 1
+        SceneX(K) = SceneX(K + 1)
+        SceneY(K) = SceneY(K + 1)
+        SceneW(K) = SceneW(K + 1)
+        SceneH(K) = SceneH(K + 1)
+    NEXT K
+    SceneN = SceneN - 1
+    FOR K = 1 TO SceneN
+        IF SceneOrder(K) > I THEN
+            SceneOrder(K) = SceneOrder(K) - 1
+        END IF
+    NEXT K
+    SceneRemoved = I
+END SUB
+
+FUNCTION SceneAt(X AS INTEGER, Y AS INTEGER) AS INTEGER
+    LOCAL K AS INTEGER
+    LOCAL I AS INTEGER
+    FOR K = SceneN TO 1 STEP -1
+        I = SceneOrder(K)
+        IF X >= SceneX(I) AND Y >= SceneY(I) AND X < SceneX(I) + SceneW(I) AND Y < SceneY(I) + SceneH(I) THEN
+            RETURN I
+        END IF
+    NEXT K
+    RETURN 0
+END FUNCTION
+
+SUB SceneToFront(I AS INTEGER)
+    LOCAL K AS INTEGER
+    LOCAL D AS INTEGER
+    D = SceneDepth(I)
+    IF D = 0 THEN
+        EXIT SUB
+    END IF
+    FOR K = D TO SceneN - 1
+        SceneOrder(K) = SceneOrder(K + 1)
+    NEXT K
+    SceneOrder(SceneN) = I
+END SUB
+
+SUB SceneToBack(I AS INTEGER)
+    LOCAL K AS INTEGER
+    LOCAL D AS INTEGER
+    D = SceneDepth(I)
+    IF D = 0 THEN
+        EXIT SUB
+    END IF
+    FOR K = D TO 2 STEP -1
+        SceneOrder(K) = SceneOrder(K - 1)
+    NEXT K
+    SceneOrder(1) = I
+END SUB
+
+SUB SceneClean
+    SceneDirtyW = 0
+    SceneDirtyH = 0
+END SUB
+
+SUB SceneDirty(X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    CALL GeomUnite(SceneDirtyX, SceneDirtyY, SceneDirtyW, SceneDirtyH, X, Y, W, H)
+    SceneDirtyX = GeomX
+    SceneDirtyY = GeomY
+    SceneDirtyW = GeomW
+    SceneDirtyH = GeomH
+END SUB

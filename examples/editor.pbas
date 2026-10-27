@@ -1,0 +1,39 @@
+' Interactive Editor: a textbox and a checkbox inspected and changed by
+' handlers (M3b example). Keep 5 shortens the text and clears the box.
+DIM Line$ AS STRING
+DIM FromEnd AS BOOLEAN
+DIM Edits AS INTEGER
+Line$ = "PcW16 BASIC"
+WINDOW "Interactive Editor"
+TEXTBOX Line$, "Text to edit"
+CHECKBOX FromEnd, "Keep the end instead"
+LABEL "Keep 5 keeps five letters"
+BUTTON "Inspect", Inspect
+BUTTON "Keep 5", KeepFive
+BUTTON "Done", Finish
+SUB Inspect
+    IF Line$ = "" THEN
+        MESSAGE "The text is empty"
+    ELSE
+        MESSAGE "Text: " + Line$ + " (" + STR$(LEN(Line$)) + " letters)"
+    END IF
+    IF FromEnd THEN
+        MESSAGE "Keep 5 will keep the end"
+    ELSE
+        MESSAGE "Keep 5 will keep the start"
+    END IF
+END SUB
+SUB KeepFive
+    IF FromEnd THEN
+        Line$ = RIGHT$(Line$, 5)
+    ELSE
+        Line$ = LEFT$(Line$, 5)
+    END IF
+    FromEnd = FALSE
+    Edits = Edits + 1
+    MESSAGE "Change " + STR$(Edits) + ": " + Line$
+END SUB
+SUB Finish
+    EXIT
+END SUB
+END

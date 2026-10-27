@@ -1,0 +1,31 @@
+' Tutorial 1: a window with a label, a text field, buttons and a menu.
+DIM Name$ AS STRING * 20
+DIM Greeting$ AS STRING * 24
+DIM Count AS INTEGER
+
+WINDOW Main, "HELLO", LARGE
+LABEL Greeting$
+TEXTBOX Name$, "Your name"
+BUTTON "Greet", Greet, DEFAULT
+BUTTON "Quit", Quit
+
+MENU "File"
+    ITEM "Greet", Greet, KEY "G"
+    ITEM "Quit", Quit, KEY "Q"
+END MENU
+
+SUB Greet
+    Count = Count + 1
+    IF LEN(Name$) = 0 THEN
+        Greeting$ = "Type your name first"
+    ELSE
+        Greeting$ = LEFT$("Hello, " + Name$, 24)
+    END IF
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+
+Greeting$ = "Hello!"
+END

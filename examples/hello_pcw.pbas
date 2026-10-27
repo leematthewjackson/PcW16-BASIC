@@ -1,0 +1,9 @@
+' hello_pcw.pbas: minimal XAnne validation for the M2 toolchain (no GUI).
+' Dismiss each alert with Enter/OK. You should see, in order:
+'   "Hello from PcW16 BASIC", then "Built on the PcW16", then "Dice roll: 4".
+DIM Dice AS INTEGER
+Dice = 2 + 2
+MESSAGE "Hello from PcW16 BASIC"
+MESSAGE "Built on the PcW16"
+MESSAGE "Dice roll: " + STR$(Dice)
+END

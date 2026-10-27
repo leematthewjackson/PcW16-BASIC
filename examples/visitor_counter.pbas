@@ -1,0 +1,63 @@
+' Visitor counter (M5d example): labels that change as buttons are pressed.
+' Three labels show STRING variables; the handlers change the counts and
+' CALL Refresh to rebuild the text. The window shows the new text when a
+' handler finishes. Four buttons sit in two rows; Return presses "In"
+' (the DEFAULT button). A changing label shows at most 24 printable
+' characters, so every text here is built to stay within that.
+DIM Inside AS INTEGER
+DIM Total AS INTEGER
+DIM Peak AS INTEGER
+DIM Limit AS INTEGER
+DIM Status$ AS STRING
+DIM Counts$ AS STRING
+DIM Note$ AS STRING
+Limit = 5
+CALL Refresh
+WINDOW "Visitor counter"
+LABEL Status$
+LABEL Counts$
+LABEL Note$
+BUTTON "In", Arrive, DEFAULT
+BUTTON "Out", Leave
+BUTTON "Reset", Restart
+BUTTON "Quit", Finish
+SUB Arrive
+    IF Inside >= Limit THEN
+        Note$ = "Full - wait for someone"
+        EXIT SUB
+    END IF
+    Inside = Inside + 1
+    Total = Total + 1
+    IF Inside > Peak THEN
+        Peak = Inside
+    END IF
+    Note$ = "Welcome!"
+    CALL Refresh
+END SUB
+SUB Leave
+    IF Inside = 0 THEN
+        Note$ = "Nobody is inside"
+        EXIT SUB
+    END IF
+    Inside = Inside - 1
+    Note$ = "Goodbye"
+    CALL Refresh
+END SUB
+SUB Restart
+    Inside = 0
+    Total = 0
+    Peak = 0
+    Note$ = ""
+    CALL Refresh
+END SUB
+SUB Refresh
+    Status$ = "Inside: " + STR$(Inside) + " of " + STR$(Limit)
+    IF Inside = Limit THEN
+        Status$ = Status$ + " (full)"
+    END IF
+    Counts$ = "Today " + STR$(Total) + ", peak " + STR$(Peak)
+END SUB
+SUB Finish
+    EXIT
+END SUB
+END

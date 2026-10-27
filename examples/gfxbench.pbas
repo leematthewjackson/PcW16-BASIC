@@ -1,0 +1,142 @@
+' GFXBENCH (M9 graphics benchmark): an interactive chart.
+' A bar chart of 12 monthly values with axes, labels and a title; a click on
+' a bar (or Left / Right) selects it — the bar is shown inverted and its
+' value in the status line; Up / Down change the selected value by 5 and
+' redraw only that bar. "Run" starts a timer that scrolls a line trace
+' along the bottom strip (DRAW SCROLL + one new segment per second, from
+' where the last one ended, so the trace is one continuous line); "Stop"
+' stops it. "Redraw" draws the whole chart again and counts how often it
+' was drawn (PAINT also runs after an alert).
+CONST BARS = 12
+CONST BARW = 32
+CONST BASE = 150
+CONST LEFTX = 30
+DIM Value(12) AS INTEGER
+DIM Sel AS INTEGER
+DIM Status$ AS STRING * 24
+DIM Draws AS INTEGER
+DIM Running AS BOOLEAN
+DIM TraceY AS INTEGER
+DIM LastY AS INTEGER
+DIM Phase AS INTEGER
+DIM I AS INTEGER
+WINDOW "Graphics benchmark", LARGE
+LABEL Status$
+CANVAS 480, 250, PAINT Paint, MOUSE Click, KEYS KeyIn
+BUTTON "Redraw", Paint
+BUTTON "Run", RunIt
+BUTTON "Stop", StopIt
+BUTTON "Quit", Finish
+TIMER Tick, EVERY 1
+
+SUB DrawBar(K AS INTEGER)
+    LOCAL X AS INTEGER
+    LOCAL H AS INTEGER
+    X = LEFTX + (K - 1) * (BARW + 4)
+    H = Value(K)
+    DRAW FILL X, 20, BARW, BASE - 20, 8
+    DRAW FILL X, BASE - H, BARW, H, 3
+    DRAW BOX X, BASE - H, BARW, H
+    IF K = Sel THEN
+        DRAW INVERT X, 20, BARW, BASE - 20
+    END IF
+END SUB
+
+SUB Paint
+    Draws = Draws + 1
+    DRAW CLEAR
+    DRAW TEXT 140, 2, "Monthly values (click a bar)"
+    DRAW LINE LEFTX - 2, 20, LEFTX - 2, BASE
+    DRAW LINE LEFTX - 2, BASE, 470, BASE
+    FOR I = 0 TO 4
+        DRAW LINE LEFTX - 6, BASE - I * 30, LEFTX - 2, BASE - I * 30
+        DRAW TEXT 2, BASE - I * 30 - 8, STR$(I * 30)
+    NEXT I
+    FOR I = 1 TO BARS
+        CALL DrawBar(I)
+        DRAW TEXT LEFTX + (I - 1) * (BARW + 4) + 4, BASE + 4, MID$("JFMAMJJASOND", I, 1)
+    NEXT I
+    DRAW BOX 0, 180, 480, 70
+    CALL ShowStatus
+END SUB
+
+SUB ShowStatus
+    IF Sel = 0 THEN
+        Status$ = "Draws " + STR$(Draws)
+    ELSE
+        Status$ = MID$("JanFebMarAprMayJunJulAugSepOctNovDec", Sel * 3 - 2, 3) + " = " + STR$(Value(Sel))
+    END IF
+END SUB
+
+SUB Select(K AS INTEGER)
+    LOCAL Old AS INTEGER
+    Old = Sel
+    Sel = K
+    IF Old > 0 THEN
+        CALL DrawBar(Old)
+    END IF
+    CALL DrawBar(Sel)
+    CALL ShowStatus
+END SUB
+
+SUB Click
+    LOCAL K AS INTEGER
+    IF MOUSEEVENT <> 1 THEN
+        EXIT SUB
+    END IF
+    IF MOUSEX < LEFTX OR MOUSEY > BASE THEN
+        EXIT SUB
+    END IF
+    K = (MOUSEX - LEFTX) / (BARW + 4) + 1
+    IF K >= 1 AND K <= BARS THEN
+        CALL Select(K)
+    END IF
+END SUB
+
+SUB KeyIn
+    SELECT CASE KEYCODE
+    CASE 226
+        CALL Select(MAX(1, Sel - 1))
+    CASE 227
+        CALL Select(MIN(BARS, Sel + 1))
+    CASE 224, 225
+        IF Sel > 0 THEN
+            IF KEYCODE = 224 THEN
+                Value(Sel) = MIN(120, Value(Sel) + 5)
+            ELSE
+                Value(Sel) = MAX(0, Value(Sel) - 5)
+            END IF
+            CALL DrawBar(Sel)
+            CALL ShowStatus
+        END IF
+    END SELECT
+END SUB
+
+SUB Tick
+    IF NOT Running THEN
+        EXIT SUB
+    END IF
+    Phase = Phase + 1
+    DRAW SCROLL 1, 181, 478, 68, -8, 0
+    TraceY = 215 + ((Phase * 7) MOD 31) - 15
+    DRAW LINE 469, LastY, 477, TraceY
+    LastY = TraceY
+END SUB
+
+SUB RunIt
+    Running = TRUE
+END SUB
+
+SUB StopIt
+    Running = FALSE
+END SUB
+
+SUB Finish
+    EXIT
+END SUB
+
+FOR I = 1 TO BARS
+    Value(I) = 20 + (I * 37) MOD 90
+NEXT I
+LastY = 215
+END

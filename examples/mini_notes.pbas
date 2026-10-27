@@ -1,0 +1,20 @@
+' Mini Notes (M4 example): one memo kept in a disposable file.
+' Type a memo, Save it, change or clear the field, Load it back.
+' Writes only PBMEMO.TXT in the program's folder (default \PCW\FOLDER01).
+DIM Memo$ AS STRING
+WINDOW "Mini Notes"
+LABEL "Your memo is kept in PBMEMO.TXT"
+TEXTBOX Memo$, "Memo"
+BUTTON "Save", SaveMemo
+BUTTON "Load", LoadMemo
+BUTTON "Quit", QuitNotes
+SUB SaveMemo
+    FILESAVE "PBMEMO.TXT", Memo$
+END SUB
+SUB LoadMemo
+    FILELOAD "PBMEMO.TXT", Memo$
+END SUB
+SUB QuitNotes
+    EXIT
+END SUB
+END

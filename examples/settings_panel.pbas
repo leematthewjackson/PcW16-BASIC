@@ -1,0 +1,67 @@
+' Settings panel (M5d example): a utility window with a text field, a tick
+' box, a status line that changes after every action and five buttons in
+' two rows. Return is a shortcut for Save (the DEFAULT button). Settings
+' are kept in the disposable file PBSETUP.TXT as "name|sound", e.g. "Ada|1".
+' A changing label shows at most 24 printable characters, so names are
+' shortened with LEFT$ before they go into the status line (a name typed
+' with accented or typographic characters would stop the program with a
+' clear error when shown there).
+DIM Owner$ AS STRING
+DIM Sound AS BOOLEAN
+DIM Status$ AS STRING
+DIM Line$ AS STRING
+DIM Bar AS INTEGER
+Owner$ = "PcW16 user"
+Sound = TRUE
+Status$ = "Not saved yet"
+WINDOW "Settings"
+TEXTBOX Owner$, "Owner name"
+CHECKBOX Sound, "Key click sound"
+LABEL Status$
+BUTTON "Save", Store, DEFAULT
+BUTTON "Load", Fetch
+BUTTON "Defaults", Reset
+BUTTON "Check", Inspect
+BUTTON "Quit", Finish
+SUB Store
+    IF LEN(Owner$) = 0 OR INSTR(Owner$, "|") > 0 THEN
+        Status$ = "Name empty or has |"
+        EXIT SUB
+    END IF
+    Line$ = Owner$ + "|"
+    IF Sound THEN
+        Line$ = Line$ + "1"
+    ELSE
+        Line$ = Line$ + "0"
+    END IF
+    FILESAVE "PBSETUP.TXT", Line$
+    Status$ = "Saved for " + LEFT$(Owner$, 14)
+END SUB
+SUB Fetch
+    Line$ = ""
+    FILELOAD "PBSETUP.TXT", Line$
+    Bar = INSTR(Line$, "|")
+    IF Bar = 0 THEN
+        Status$ = "No settings loaded"
+        EXIT SUB
+    END IF
+    Owner$ = LEFT$(Line$, Bar - 1)
+    Sound = MID$(Line$, Bar + 1, 1) = "1"
+    Status$ = "Loaded for " + LEFT$(Owner$, 13)
+END SUB
+SUB Reset
+    Owner$ = "PcW16 user"
+    Sound = TRUE
+    Status$ = "Defaults (not saved)"
+END SUB
+SUB Inspect
+    IF Sound THEN
+        Status$ = "Sound on, name " + STR$(LEN(Owner$)) + " chars"
+    ELSE
+        Status$ = "Sound off, name " + STR$(LEN(Owner$)) + " chars"
+    END IF
+END SUB
+SUB Finish
+    EXIT
+END SUB
+END

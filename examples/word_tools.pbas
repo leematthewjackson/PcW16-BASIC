@@ -1,0 +1,31 @@
+' Word Tools (M5a example): string expressions with computed positions.
+' Reverses a word one letter at a time, counts its vowels and builds its
+' initials-style abbreviation - all with general STRING expressions.
+DIM Word$ AS STRING
+DIM Back$ AS STRING
+DIM Ch$ AS STRING
+DIM I AS INTEGER
+DIM Vowels AS INTEGER
+Word$ = "Amstrad PcW16"
+FOR I = LEN(Word$) TO 1 STEP -1
+    Back$ = Back$ + MID$(Word$, I, 1)
+NEXT I
+MESSAGE "Backwards: " + Back$
+FOR I = 1 TO LEN(Word$)
+    Ch$ = MID$(Word$, I, 1)
+    IF Ch$ = "a" THEN
+        Vowels = Vowels + 1
+    END IF
+    IF Ch$ = "A" THEN
+        Vowels = Vowels + 1
+    END IF
+NEXT I
+MESSAGE "Letters a/A: " + STR$(Vowels)
+Back$ = ""
+FOR I = 1 TO LEN(Word$)
+    Back$ = MID$(Word$, I, 1) + Back$
+NEXT I
+MESSAGE "Built from the front: " + Back$
+Word$ = "[" + Word$ + "]"
+MESSAGE Word$ + " has " + STR$(LEN(Word$)) + " characters"
+END

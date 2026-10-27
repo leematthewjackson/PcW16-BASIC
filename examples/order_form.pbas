@@ -1,0 +1,66 @@
+' Order form (M6 Phase 1 example): radio buttons, a number field with a
+' spinner, a question with two answers, a menu bar with a tick, keys on
+' buttons (Green adds, Red clears, Stop quits) and a beep.
+DIM Orders AS INTEGER
+DIM Answer AS INTEGER
+DIM Status$ AS STRING
+WINDOW "Order form", LARGE
+TEXTBOX Customer$, "Customer"
+RADIO Size, "Small", "Medium", "Large"
+NUMBERBOX Qty, "Quantity (1 to 20)", MIN 1, MAX 20, SPIN
+CHECKBOX Gift, "Gift wrap"
+LABEL Status$
+BUTTON "Add order", AddOrder, DEFAULT, KEY GREEN
+BUTTON "Clear", ClearForm, KEY RED
+BUTTON "Quit", Finish, KEY STOP
+MENU "Order"
+    ITEM "Add order", AddOrder, KEY "A"
+    ITEM "Clear form", ClearForm
+    ITEM "-"
+    ITEM "Quit", Finish
+END MENU
+MENU "Options"
+    ITEM "Beep on add", ToggleBeep, TICK BeepOn
+END MENU
+SUB AddOrder
+    IF LEN(Customer$) = 0 THEN
+        Status$ = "Type a customer name"
+        FOCUS Customer$
+        EXIT SUB
+    END IF
+    IF Size = 0 THEN
+        Status$ = "Choose a size"
+        EXIT SUB
+    END IF
+    Orders = Orders + 1
+    Status$ = "Order " + STR$(Orders) + ": " + STR$(Qty) + " x size " + STR$(Size)
+    IF Gift THEN
+        MESSAGE "Order " + STR$(Orders) + " for " + Customer$ + " is gift wrapped."
+    END IF
+    IF BeepOn THEN
+        BEEP
+    END IF
+END SUB
+SUB ClearForm
+    Answer = ASK("Clear the form?", "Clear", "Keep")
+    IF Answer = 1 THEN
+        Customer$ = ""
+        Size = 0
+        Qty = 1
+        Gift = FALSE
+        Status$ = "Form cleared"
+    END IF
+END SUB
+SUB ToggleBeep
+    BeepOn = NOT BeepOn
+END SUB
+SUB Finish
+    Answer = ASK("Orders taken: " + STR$(Orders) + ". Quit now?", "Quit", "Stay")
+    IF Answer = 1 THEN
+        EXIT
+    END IF
+END SUB
+Qty = 1
+BeepOn = TRUE
+Status$ = "Ready"
+END

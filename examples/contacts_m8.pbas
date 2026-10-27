@@ -1,0 +1,413 @@
+' Contacts with e-mail (M8 benchmark 1): up to 200 entries of name, phone
+' and e-mail kept in CONTBOOK.DAT. The M7 Contacts held 30 entries of name +
+' phone in the program's own 16K and filled it. Here all three fields live in
+' BANKED arrays (16K blocks got from Rosanne at start-up, LANGUAGE-SPEC §5.4)
+' and the LIST shows one page of 6 names, copied into an ordinary array;
+' Prev / Next turn the page, and Find and Add jump to the page they need.
+' Save and Quit are in the Book menu (the window holds six buttons).
+' Add, update, delete and find entries (Find looks for the text typed in
+' Name), kept in name order. Save writes CONTBOOK.TMP first and only then
+' replaces CONTBOOK.DAT; a lone CONTBOOK.TMP is recovered at start-up.
+' Status texts are at most 24 characters (the LABEL limit, LANGUAGE-SPEC §5).
+' Files: reads and REPLACES CONTBOOK.DAT and CONTBOOK.TMP in its folder
+' (not the M7 example's CONTACTS.DAT).
+' Needs 3 free 16K blocks (each BANKED array has its own: 200 x 25,
+' 200 x 21 and 200 x 41 bytes); with fewer the program stops at start with
+' a runtime error.
+' Build with --string-capacity 41 (the e-mail box holds up to 40 characters).
+CONST MAXC = 200
+CONST PAGE = 6
+CONST MAGIC$ = "PBCONTBOOK1"
+DIM Names$(200) AS STRING * 24 BANKED
+DIM Phones$(200) AS STRING * 20 BANKED
+DIM Emails$(200) AS STRING * 40 BANKED
+DIM Rows$(6) AS STRING * 24
+DIM Shown AS INTEGER
+DIM Top AS INTEGER
+DIM Sel AS INTEGER
+DIM Count AS INTEGER
+DIM Changed AS BOOLEAN
+DIM Damaged AS BOOLEAN
+DIM Answer AS INTEGER
+DIM T$ AS STRING
+DIM Status$ AS STRING
+WINDOW "Contacts", LARGE
+LIST Who, Rows$, Shown, ROWS 6, CHANGE PickRow
+TEXTBOX Name$, "Name"
+TEXTBOX Phone$, "Phone"
+TEXTBOX Email$, "E-mail"
+LABEL Status$
+BUTTON "Add", AddEntry
+BUTTON "Update", UpdateEntry
+BUTTON "Delete", DeleteEntry
+BUTTON "Find", FindNext, DEFAULT
+BUTTON "Prev", PrevPage
+BUTTON "Next", NextPage
+MENU "Book"
+    ITEM "Save", SaveAll, KEY "S"
+    ITEM "-"
+    ITEM "Quit", Finish
+END MENU
+
+' The two filing errors a user can act on get words; others their code.
+FUNCTION IoText$(Code AS INTEGER) AS STRING
+    IF Code = 2 THEN
+        RETURN "not found"
+    END IF
+    IF Code = 163 THEN
+        RETURN "disk full"
+    END IF
+    RETURN "error " + STR$(Code)
+END FUNCTION
+
+FUNCTION FieldsOk() AS BOOLEAN
+    IF LEN(Name$) = 0 OR LEN(Name$) > 24 THEN
+        Status$ = "Name: 1 to 24 characters"
+        RETURN FALSE
+    END IF
+    IF LEN(Phone$) > 20 THEN
+        Status$ = "Phone: up to 20 chars"
+        RETURN FALSE
+    END IF
+    RETURN TRUE
+END FUNCTION
+
+' The rows of the page starting after entry Top; the LIST selection
+' follows Sel when it is on this page.
+SUB FillPage
+    LOCAL K AS INTEGER
+    Shown = 0
+    FOR K = 1 TO PAGE
+        IF Top + K <= Count THEN
+            Rows$(K) = Names$(Top + K)
+            Shown = K
+        END IF
+    NEXT K
+    IF Sel > Top AND Sel <= Top + Shown THEN
+        Who = Sel - Top
+    ELSE
+        Who = 0
+    END IF
+END SUB
+
+' Turn to the page holding entry E (1..Count).
+SUB ShowPageOf(E AS INTEGER)
+    Top = (E - 1) - (E - 1) MOD PAGE
+    CALL FillPage
+END SUB
+
+SUB ShowSel
+    IF Sel = 0 THEN
+        Name$ = ""
+        Phone$ = ""
+        Email$ = ""
+        Status$ = STR$(Count) + " contacts"
+    ELSE
+        Name$ = Names$(Sel)
+        Phone$ = Phones$(Sel)
+        Email$ = Emails$(Sel)
+        Status$ = STR$(Sel) + " of " + STR$(Count)
+    END IF
+END SUB
+
+SUB PickRow
+    IF Who = 0 THEN
+        Sel = 0
+    ELSE
+        Sel = Top + Who
+    END IF
+    CALL ShowSel
+END SUB
+
+SUB TurnTo(NewTop AS INTEGER)
+    Top = NewTop
+    CALL FillPage
+    Status$ = "Page " + STR$(Top / PAGE + 1)
+END SUB
+
+SUB PrevPage
+    IF Top = 0 THEN
+        Status$ = "First page"
+    ELSE
+        CALL TurnTo(Top - PAGE)
+    END IF
+END SUB
+
+SUB NextPage
+    IF Top + PAGE >= Count THEN
+        Status$ = "Last page"
+    ELSE
+        CALL TurnTo(Top + PAGE)
+    END IF
+END SUB
+
+' The next entry after Start whose name contains Key$ (any case), or 0.
+FUNCTION FindFrom(Start AS INTEGER, Key$) AS INTEGER
+    LOCAL K AS INTEGER
+    LOCAL Pos AS INTEGER
+    FOR K = 1 TO Count
+        Pos = (Start + K - 1) MOD Count + 1
+        IF INSTR(UCASE$(Names$(Pos)), Key$) > 0 THEN
+            RETURN Pos
+        END IF
+    NEXT K
+    RETURN 0
+END FUNCTION
+
+SUB CopyEntry(Dest AS INTEGER, Source AS INTEGER)
+    Names$(Dest) = Names$(Source)
+    Phones$(Dest) = Phones$(Source)
+    Emails$(Dest) = Emails$(Source)
+END SUB
+
+SUB StoreFields(E AS INTEGER)
+    Names$(E) = Name$
+    Phones$(E) = Phone$
+    Emails$(E) = Email$
+END SUB
+
+SUB AddEntry
+    IF Count = MAXC THEN
+        Status$ = "The book is full (" + STR$(MAXC) + ")"
+        EXIT SUB
+    END IF
+    IF NOT FieldsOk() THEN
+        EXIT SUB
+    END IF
+    Count = Count + 1
+    Sel = Count
+    CALL StoreFields(Sel)
+    CALL Place
+    CALL ShowPageOf(Sel)
+    Changed = TRUE
+    Status$ = "Added: " + STR$(Sel) + " of " + STR$(Count)
+END SUB
+
+SUB UpdateEntry
+    IF Sel = 0 THEN
+        Status$ = "Pick a contact first"
+        EXIT SUB
+    END IF
+    IF NOT FieldsOk() THEN
+        EXIT SUB
+    END IF
+    CALL StoreFields(Sel)
+    CALL Place
+    CALL ShowPageOf(Sel)
+    Changed = TRUE
+    Status$ = "Updated"
+END SUB
+
+SUB DeleteEntry
+    LOCAL K AS INTEGER
+    IF Sel = 0 THEN
+        Status$ = "Pick a contact first"
+        EXIT SUB
+    END IF
+    Answer = ASK("Delete " + Names$(Sel) + "?", "Delete", "Keep")
+    IF Answer <> 1 THEN
+        EXIT SUB
+    END IF
+    FOR K = Sel TO Count - 1
+        CALL CopyEntry(K, K + 1)
+    NEXT K
+    Count = Count - 1
+    Sel = 0
+    IF Top >= Count AND Top > 0 THEN
+        Top = Top - PAGE
+    END IF
+    CALL FillPage
+    Changed = TRUE
+    CALL ShowSel
+END SUB
+
+SUB FindNext
+    LOCAL Hit AS INTEGER
+    IF LEN(Name$) = 0 OR Count = 0 THEN
+        Status$ = "Type a name, then Find"
+        EXIT SUB
+    END IF
+    T$ = Name$
+    Hit = FindFrom(Sel, UCASE$(T$))
+    IF Hit = 0 THEN
+        Status$ = "Not found"
+    ELSE
+        Sel = Hit
+        CALL ShowPageOf(Sel)
+        CALL ShowSel
+        Status$ = "Found " + STR$(Sel) + " of " + STR$(Count)
+    END IF
+END SUB
+
+' Move entry Sel to its place in name order (ignoring case); every other
+' entry is in order already, so it only travels up or down. Sel follows it.
+SUB Place
+    LOCAL J AS INTEGER
+    LOCAL Key$ AS STRING
+    LOCAL KeyName$ AS STRING
+    LOCAL KeyPhone$ AS STRING
+    LOCAL KeyEmail$ AS STRING
+    LOCAL Moving AS BOOLEAN
+    KeyName$ = Names$(Sel)
+    KeyPhone$ = Phones$(Sel)
+    KeyEmail$ = Emails$(Sel)
+    Key$ = UCASE$(KeyName$)
+    J = Sel
+    Moving = J > 1
+    WHILE Moving
+        IF UCASE$(Names$(J - 1)) > Key$ THEN
+            CALL CopyEntry(J, J - 1)
+            J = J - 1
+            Moving = J > 1
+        ELSE
+            Moving = FALSE
+        END IF
+    WEND
+    Moving = J < Count
+    WHILE Moving
+        IF UCASE$(Names$(J + 1)) < Key$ THEN
+            CALL CopyEntry(J, J + 1)
+            J = J + 1
+            Moving = J < Count
+        ELSE
+            Moving = FALSE
+        END IF
+    WEND
+    Names$(J) = KeyName$
+    Phones$(J) = KeyPhone$
+    Emails$(J) = KeyEmail$
+    Sel = J
+END SUB
+
+SUB SaveAll
+    LOCAL K AS INTEGER
+    LOCAL Code AS INTEGER
+    IF Damaged THEN
+        Status$ = "Damaged file: not saved"
+        EXIT SUB
+    END IF
+    OPEN "CONTBOOK.TMP" FOR OUTPUT AS #2
+    Code = IOERR
+    IF Code = 0 THEN
+        PRINT #2, MAGIC$
+        Code = IOERR
+    END IF
+    IF Code = 0 THEN
+        PRINT #2, Count
+        Code = IOERR
+    END IF
+    FOR K = 1 TO Count
+        IF Code = 0 THEN
+            PRINT #2, Names$(K)
+            Code = IOERR
+        END IF
+        IF Code = 0 THEN
+            PRINT #2, Phones$(K)
+            Code = IOERR
+        END IF
+        IF Code = 0 THEN
+            PRINT #2, Emails$(K)
+            Code = IOERR
+        END IF
+    NEXT K
+    CLOSE #2
+    IF Code = 0 THEN
+        Code = IOERR
+    END IF
+    IF Code <> 0 THEN
+        KILL "CONTBOOK.TMP"
+        Status$ = "Save: " + IoText$(Code)
+        EXIT SUB
+    END IF
+    KILL "CONTBOOK.DAT"
+    IF IOERR <> 0 AND IOERR <> 2 THEN
+        Status$ = "Kept in CONTBOOK.TMP"
+        EXIT SUB
+    END IF
+    NAME "CONTBOOK.TMP" AS "CONTBOOK.DAT"
+    IF IOERR <> 0 THEN
+        Status$ = "Kept in CONTBOOK.TMP"
+        EXIT SUB
+    END IF
+    Changed = FALSE
+    Status$ = "Saved " + STR$(Count) + " contacts"
+END SUB
+
+SUB LoadAll
+    LOCAL N AS INTEGER
+    LOCAL K AS INTEGER
+    OPEN "CONTBOOK.DAT" FOR INPUT AS #1
+    IF IOERR = 2 THEN
+        NAME "CONTBOOK.TMP" AS "CONTBOOK.DAT"
+        IF IOERR = 2 THEN
+            Status$ = "New contact book"
+            EXIT SUB
+        END IF
+        IF IOERR <> 0 THEN
+            Damaged = TRUE
+            Status$ = "Recover: " + IoText$(IOERR)
+            EXIT SUB
+        END IF
+        Status$ = "Recovered unsaved copy"
+        OPEN "CONTBOOK.DAT" FOR INPUT AS #1
+    END IF
+    IF IOERR <> 0 THEN
+        Damaged = TRUE
+        Status$ = "Read: " + IoText$(IOERR)
+        EXIT SUB
+    END IF
+    N = -1
+    LINE INPUT #1, T$
+    IF IOERR = 0 AND T$ = MAGIC$ THEN
+        LINE INPUT #1, T$
+        IF IOERR = 0 AND LEN(T$) > 0 THEN
+            N = VAL(T$)
+        END IF
+    END IF
+    IF N < 0 OR N > MAXC THEN
+        CLOSE #1
+        Damaged = TRUE
+        Status$ = "Not a contacts file"
+        EXIT SUB
+    END IF
+    FOR K = 1 TO N
+        LINE INPUT #1, Names$(K)
+        IF IOERR = 0 THEN
+            LINE INPUT #1, Phones$(K)
+        END IF
+        IF IOERR = 0 THEN
+            LINE INPUT #1, Emails$(K)
+        END IF
+        IF IOERR <> 0 THEN
+            Damaged = TRUE
+            Status$ = "Entry " + STR$(K) + ": " + IoText$(IOERR)
+            CLOSE #1
+            EXIT SUB
+        END IF
+        Count = K
+    NEXT K
+    CLOSE #1
+    CALL FillPage
+    IF LEFT$(Status$, 9) <> "Recovered" THEN
+        Status$ = "Loaded " + STR$(Count) + " contacts"
+    END IF
+END SUB
+
+SUB Finish
+    IF Changed THEN
+        Answer = ASK("Save changes before quitting?", "Save", "Discard", "Cancel")
+        IF Answer = 3 THEN
+            EXIT SUB
+        END IF
+        IF Answer = 1 THEN
+            CALL SaveAll
+            IF Changed THEN
+                EXIT SUB
+            END IF
+        END IF
+    END IF
+    EXIT
+END SUB
+
+CALL LoadAll
+END

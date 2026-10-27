@@ -1,0 +1,330 @@
+' Contacts (M7 example): a small phone/address book kept in CONTACTS.DAT.
+' Add, update, delete and find entries (Find looks for the text typed in
+' Name), kept in name order. Save writes CONTACTS.TMP first and only then
+' replaces CONTACTS.DAT, so an interrupted save never loses the previous
+' file. At start-up a lone CONTACTS.TMP (a save that
+' stopped between KILL and NAME) is recovered.
+' Status texts are at most 24 characters (the LABEL limit, LANGUAGE-SPEC §5).
+' Uses: SUB/FUNCTION parameters, LOCAL, CONST, SELECT CASE, arrays, LIST,
+' OPEN/PRINT #/LINE INPUT #/CLOSE/KILL/NAME, IOERR, ASK.
+' Files: reads and REPLACES CONTACTS.DAT and CONTACTS.TMP in its folder.
+' Size: 30 entries of name + phone fill most of the 16K image (an e-mail
+' field as well would need about 1.6 KB more: see KNOWN-ISSUES KI-14).
+' Build with --string-capacity 32 (each text field holds up to 31 characters).
+CONST MAXC = 30
+CONST MAGIC$ = "PBCONTACTS1"
+DIM Names$(30) AS STRING
+DIM Phones$(30) AS STRING
+DIM Count AS INTEGER
+DIM Changed AS BOOLEAN
+DIM Damaged AS BOOLEAN
+DIM Answer AS INTEGER
+DIM T$ AS STRING
+DIM Status$ AS STRING
+WINDOW "Contacts", LARGE
+LIST Who, Names$, Count, ROWS 6, CHANGE ShowOne
+TEXTBOX Name$, "Name"
+TEXTBOX Phone$, "Phone"
+LABEL Status$
+BUTTON "Add", AddEntry
+BUTTON "Update", UpdateEntry
+BUTTON "Delete", DeleteEntry
+BUTTON "Find", FindNext, DEFAULT
+BUTTON "Save", SaveAll
+BUTTON "Quit", Finish, KEY STOP
+
+FUNCTION IoText$(Code AS INTEGER) AS STRING
+    SELECT CASE Code
+    CASE 2
+        RETURN "not found"
+    CASE 3
+        RETURN "no folder"
+    CASE 5
+        RETURN "access denied"
+    CASE 19
+        RETURN "write protect"
+    CASE 163
+        RETURN "disk full"
+    CASE 240
+        RETURN "drive error"
+    CASE 243, 244
+        RETURN "bad line"
+    CASE 245
+        RETURN "file too short"
+    CASE ELSE
+        RETURN "error " + STR$(Code)
+    END SELECT
+END FUNCTION
+
+FUNCTION FieldsOk() AS BOOLEAN
+    IF LEN(Name$) = 0 OR LEN(Name$) > 24 THEN
+        Status$ = "Name: 1 to 24 characters"
+        RETURN FALSE
+    END IF
+    IF LEN(Phone$) > 20 THEN
+        Status$ = "Phone: up to 20 chars"
+        RETURN FALSE
+    END IF
+    RETURN TRUE
+END FUNCTION
+
+' The next entry after Start whose name contains Key$ (any case), or 0.
+FUNCTION FindFrom(Start AS INTEGER, Key$) AS INTEGER
+    LOCAL K AS INTEGER
+    LOCAL Pos AS INTEGER
+    FOR K = 1 TO Count
+        Pos = (Start + K - 1) MOD Count + 1
+        IF INSTR(UCASE$(Names$(Pos)), Key$) > 0 THEN
+            RETURN Pos
+        END IF
+    NEXT K
+    RETURN 0
+END FUNCTION
+
+SUB CopyEntry(Dest AS INTEGER, Source AS INTEGER)
+    Names$(Dest) = Names$(Source)
+    Phones$(Dest) = Phones$(Source)
+END SUB
+
+SUB ShowOne
+    IF Who = 0 THEN
+        Name$ = ""
+        Phone$ = ""
+    ELSE
+        Name$ = Names$(Who)
+        Phone$ = Phones$(Who)
+    END IF
+    Status$ = STR$(Count) + " contacts"
+END SUB
+
+SUB AddEntry
+    IF Count = MAXC THEN
+        Status$ = "The book is full (" + STR$(MAXC) + ")"
+        EXIT SUB
+    END IF
+    IF NOT FieldsOk() THEN
+        EXIT SUB
+    END IF
+    Count = Count + 1
+    Who = Count
+    Names$(Who) = Name$
+    Phones$(Who) = Phone$
+    CALL SortAll
+    Changed = TRUE
+    Status$ = "Added"
+END SUB
+
+SUB UpdateEntry
+    IF Who = 0 THEN
+        Status$ = "Pick a contact first"
+        EXIT SUB
+    END IF
+    IF NOT FieldsOk() THEN
+        EXIT SUB
+    END IF
+    Names$(Who) = Name$
+    Phones$(Who) = Phone$
+    CALL SortAll
+    Changed = TRUE
+    Status$ = "Updated"
+END SUB
+
+SUB DeleteEntry
+    LOCAL K AS INTEGER
+    IF Who = 0 THEN
+        Status$ = "Pick a contact first"
+        EXIT SUB
+    END IF
+    Answer = ASK("Delete " + Names$(Who) + "?", "Delete", "Keep")
+    IF Answer <> 1 THEN
+        EXIT SUB
+    END IF
+    FOR K = Who TO Count - 1
+        CALL CopyEntry(K, K + 1)
+    NEXT K
+    Count = Count - 1
+    Who = 0
+    Changed = TRUE
+    CALL ShowOne
+END SUB
+
+SUB FindNext
+    LOCAL Hit AS INTEGER
+    IF LEN(Name$) = 0 OR Count = 0 THEN
+        Status$ = "Type a name, then Find"
+        EXIT SUB
+    END IF
+    T$ = Name$
+    Hit = FindFrom(Who, UCASE$(T$))
+    IF Hit = 0 THEN
+        Status$ = "Not found"
+    ELSE
+        Who = Hit
+        CALL ShowOne
+        Status$ = "Found " + STR$(Who) + " of " + STR$(Count)
+    END IF
+END SUB
+
+' Insertion sort by name, ignoring case; the selection follows its entry.
+SUB SortAll
+    LOCAL I AS INTEGER
+    LOCAL J AS INTEGER
+    LOCAL Key$ AS STRING
+    LOCAL KeyName$ AS STRING
+    LOCAL KeyPhone$ AS STRING
+    LOCAL Done AS BOOLEAN
+    FOR I = 2 TO Count
+        KeyName$ = Names$(I)
+        KeyPhone$ = Phones$(I)
+        Key$ = UCASE$(KeyName$)
+        J = I - 1
+        Done = FALSE
+        WHILE J >= 1 AND NOT Done
+            IF UCASE$(Names$(J)) > Key$ THEN
+                CALL CopyEntry(J + 1, J)
+                IF Who = J THEN
+                    Who = J + 1
+                END IF
+                J = J - 1
+            ELSE
+                Done = TRUE
+            END IF
+        WEND
+        Names$(J + 1) = KeyName$
+        Phones$(J + 1) = KeyPhone$
+        IF Who = I THEN
+            Who = J + 1
+        END IF
+    NEXT I
+END SUB
+
+SUB SaveAll
+    LOCAL K AS INTEGER
+    LOCAL Code AS INTEGER
+    IF Damaged THEN
+        Status$ = "Damaged file: not saved"
+        EXIT SUB
+    END IF
+    OPEN "CONTACTS.TMP" FOR OUTPUT AS #2
+    Code = IOERR
+    IF Code = 0 THEN
+        PRINT #2, MAGIC$
+        Code = IOERR
+    END IF
+    IF Code = 0 THEN
+        PRINT #2, Count
+        Code = IOERR
+    END IF
+    FOR K = 1 TO Count
+        IF Code = 0 THEN
+            PRINT #2, Names$(K)
+            Code = IOERR
+        END IF
+        IF Code = 0 THEN
+            PRINT #2, Phones$(K)
+            Code = IOERR
+        END IF
+    NEXT K
+    CLOSE #2
+    IF Code = 0 THEN
+        Code = IOERR
+    END IF
+    IF Code <> 0 THEN
+        KILL "CONTACTS.TMP"
+        Status$ = "Save: " + IoText$(Code)
+        EXIT SUB
+    END IF
+    KILL "CONTACTS.DAT"
+    IF IOERR <> 0 AND IOERR <> 2 THEN
+        Status$ = "Kept in CONTACTS.TMP"
+        EXIT SUB
+    END IF
+    NAME "CONTACTS.TMP" AS "CONTACTS.DAT"
+    IF IOERR <> 0 THEN
+        Status$ = "Kept in CONTACTS.TMP"
+        EXIT SUB
+    END IF
+    Changed = FALSE
+    Status$ = "Saved " + STR$(Count) + " contacts"
+END SUB
+
+SUB LoadAll
+    LOCAL N AS INTEGER
+    LOCAL K AS INTEGER
+    OPEN "CONTACTS.DAT" FOR INPUT AS #1
+    IF IOERR = 2 THEN
+        NAME "CONTACTS.TMP" AS "CONTACTS.DAT"
+        IF IOERR = 2 THEN
+            Status$ = "New contact book"
+            EXIT SUB
+        END IF
+        IF IOERR <> 0 THEN
+            Damaged = TRUE
+            Status$ = "Recover: " + IoText$(IOERR)
+            EXIT SUB
+        END IF
+        Status$ = "Recovered unsaved copy"
+        OPEN "CONTACTS.DAT" FOR INPUT AS #1
+    END IF
+    IF IOERR <> 0 THEN
+        Damaged = TRUE
+        Status$ = "Read: " + IoText$(IOERR)
+        EXIT SUB
+    END IF
+    N = -1
+    LINE INPUT #1, T$
+    IF IOERR = 0 AND T$ = MAGIC$ THEN
+        LINE INPUT #1, T$
+        IF IOERR = 0 AND LEN(T$) > 0 THEN
+            N = VAL(T$)
+        END IF
+    END IF
+    IF N < 0 OR N > MAXC THEN
+        CLOSE #1
+        Damaged = TRUE
+        Status$ = "Not a contacts file"
+        EXIT SUB
+    END IF
+    FOR K = 1 TO N
+        LINE INPUT #1, Names$(K)
+        IF IOERR = 0 THEN
+            LINE INPUT #1, Phones$(K)
+        END IF
+        IF IOERR <> 0 THEN
+            Damaged = TRUE
+            Status$ = "Entry " + STR$(K) + ": " + IoText$(IOERR)
+            CLOSE #1
+            EXIT SUB
+        END IF
+        IF LEN(Names$(K)) > 24 THEN
+            Damaged = TRUE
+            Status$ = "Entry " + STR$(K) + ": name too long"
+            CLOSE #1
+            EXIT SUB
+        END IF
+        Count = K
+    NEXT K
+    CLOSE #1
+    IF LEFT$(Status$, 9) <> "Recovered" THEN
+        Status$ = "Loaded " + STR$(Count) + " contacts"
+    END IF
+END SUB
+
+SUB Finish
+    IF Changed THEN
+        Answer = ASK("Save changes before quitting?", "Save", "Discard", "Cancel")
+        IF Answer = 3 THEN
+            EXIT SUB
+        END IF
+        IF Answer = 1 THEN
+            CALL SaveAll
+            IF Changed THEN
+                EXIT SUB
+            END IF
+        END IF
+    END IF
+    EXIT
+END SUB
+
+CALL LoadAll
+END

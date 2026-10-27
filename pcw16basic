@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+"""PcW16 BASIC's command (pbas/cli.py): python3 pcw16basic --help"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pbas.cli import main  # noqa: E402
+
+sys.exit(main())

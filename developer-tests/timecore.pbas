@@ -1,0 +1,228 @@
+' timecore.pbas (M13 corrective): the body of TIMEPRB and TIMEPR4, the
+' XAnne probe of timer events and the clock (docs/M13-ACCEPTANCE.md, RT2).
+' Each of them sets CONST PERIOD (its TIMER's interval in 1/16 s), INCLUDEs
+' this, then declares its window and TIMER Tick. It writes no files.
+'   Clock  C1: CLOCKTICKS read as fast as possible for 2 seconds of SECONDS:
+'          how often it changed (32 for a clock that counts sixteenths),
+'          its largest step, and whether it ever went back.
+'   Idle   P1: for 10 seconds of SECONDS, the TIMER events that came (160 /
+'          PERIOD wanted), the clock's sixteenths that passed (160), the
+'          steps lib/pace.pbas made of them (steps of 2/16 s: 80), and the
+'          longest time between two events (PERIOD sixteenths wanted: a
+'          longer one is a pause on the screen).
+'   Load   P2: the same while every event also draws 8 boxes (a game's
+'          drawing): events, frames and steps; the steps should still be 80.
+'   Keys   K1: events while keys are held: the held Left, Right, Up, Down,
+'          Space (KEYDOWN, lib/keys.pbas codes) and the events a second.
+'   Restart R1: TIMER OFF and ON again every second for 5 seconds: the
+'          events counted (about 5 x 16 / PERIOD less the gaps).
+INCLUDE "../examples/lib/keys.pbas"
+INCLUDE "../examples/lib/pace.pbas"
+DIM Info$ AS STRING * 24
+DIM R$(6) AS STRING * 60
+DIM Mode AS INTEGER
+DIM Events AS INTEGER
+DIM Steps AS INTEGER
+DIM S0 AS INTEGER
+DIM C0 AS INTEGER
+DIM Last AS INTEGER
+DIM Running AS BOOLEAN
+DIM Prev AS INTEGER
+DIM Gap AS INTEGER
+
+SUB Results
+    LOCAL I AS INTEGER
+    DRAW CLEAR
+    FOR I = 1 TO 6
+        DRAW TEXT 4, 4 + (I - 1) * 18, R$(I)
+    NEXT I
+END SUB
+
+SUB Clear
+    LOCAL I AS INTEGER
+    FOR I = 1 TO 6
+        R$(I) = ""
+    NEXT I
+END SUB
+
+SUB Paint
+    CALL Results
+END SUB
+
+' The seconds since S0 (the clock wraps at the hour).
+FUNCTION Elapsed AS INTEGER
+    RETURN (SECONDS - S0 + 3600) MOD 3600
+END FUNCTION
+
+' The sixteenths of the clock since C0 (within half a minute).
+FUNCTION Sixteenths AS INTEGER
+    RETURN (CLOCKTICKS - C0 + 960) MOD 960
+END FUNCTION
+
+' Start counting at the turn of a second.
+SUB StartCount(M AS INTEGER)
+    S0 = SECONDS
+    WHILE SECONDS = S0
+    WEND
+    S0 = SECONDS
+    C0 = CLOCKTICKS
+    Events = 0
+    Steps = 0
+    Prev = C0
+    Gap = 0
+    CALL PaceStart(2, 4)
+    Mode = M
+END SUB
+
+SUB RunClock
+    LOCAL C AS INTEGER
+    LOCAL D AS INTEGER
+    LOCAL Changes AS INTEGER
+    LOCAL Big AS INTEGER
+    LOCAL Back AS INTEGER
+    Mode = 0
+    CALL Clear
+    S0 = SECONDS
+    WHILE SECONDS = S0
+    WEND
+    S0 = SECONDS
+    Last = CLOCKTICKS
+    WHILE Elapsed() < 2
+        C = CLOCKTICKS
+        IF C <> Last THEN
+            D = (C - Last + 960) MOD 960
+            IF D > 480 THEN
+                Back = Back + 1
+            ELSE
+                Changes = Changes + 1
+                Big = MAX(Big, D)
+            END IF
+            Last = C
+        END IF
+    WEND
+    R$(1) = "C1 clock in 2 s: " + STR$(Changes) + " changes (32 wanted)"
+    R$(2) = "largest step " + STR$(Big) + "/16 s, went back " + STR$(Back) + " times"
+    CALL Results
+    Info$ = "Clock: done"
+END SUB
+
+SUB RunIdle
+    CALL Clear
+    R$(1) = "P1 counting for 10 seconds..."
+    CALL Results
+    Info$ = "Idle: wait 10 seconds"
+    CALL StartCount(1)
+END SUB
+
+SUB RunLoad
+    CALL Clear
+    R$(1) = "P2 counting for 10 seconds, 8 boxes an event..."
+    CALL Results
+    Info$ = "Load: wait 10 seconds"
+    CALL StartCount(2)
+END SUB
+
+SUB RunKeys
+    CALL Clear
+    IF Mode = 3 THEN
+        Mode = 0
+        Info$ = "Keys: off"
+        CALL Results
+        EXIT SUB
+    END IF
+    R$(1) = "K1 hold Left, Right, Up, Down, Space (Keys again: off)"
+    CALL Results
+    Info$ = "Keys: on"
+    CALL StartCount(3)
+END SUB
+
+SUB RunRestart
+    CALL Clear
+    R$(1) = "R1 TIMER OFF and ON each second, 5 seconds..."
+    CALL Results
+    Info$ = "Restart: wait 5 seconds"
+    CALL StartCount(4)
+    Last = 0
+END SUB
+
+' "P1 idle: 35 events (160 wanted), clock 160/16 s" and the steps line.
+SUB Report(Row AS INTEGER, What$ AS STRING)
+    R$(Row) = What$ + ": " + STR$(Events) + " events (" + STR$(160 / PERIOD) + " wanted), clock " + STR$(Sixteenths()) + "/16 s"
+    R$(Row + 1) = "steps of 2/16 s: " + STR$(Steps) + " (80 wanted), frames " + STR$(PaceCalls) + ", dropped " + STR$(PaceLost)
+    R$(Row + 2) = "longest gap between events " + STR$(Gap) + "/16 s (" + STR$(PERIOD) + " wanted)"
+END SUB
+
+SUB HeldKeys
+    LOCAL S$ AS STRING
+    S$ = "held:"
+    IF KEYDOWN(SC_LEFT) THEN
+        S$ = S$ + " Left"
+    END IF
+    IF KEYDOWN(SC_RIGHT) THEN
+        S$ = S$ + " Right"
+    END IF
+    IF KEYDOWN(SC_UP) THEN
+        S$ = S$ + " Up"
+    END IF
+    IF KEYDOWN(SC_DOWN) THEN
+        S$ = S$ + " Down"
+    END IF
+    IF KEYDOWN(SC_SPACE) THEN
+        S$ = S$ + " Space"
+    END IF
+    R$(2) = S$
+    R$(3) = STR$(Events) + " events in " + STR$(Elapsed()) + " s"
+    CALL Results
+END SUB
+
+SUB Tick
+    LOCAL I AS INTEGER
+    LOCAL C AS INTEGER
+    IF Mode = 0 THEN
+        EXIT SUB
+    END IF
+    Events = Events + 1
+    C = CLOCKTICKS
+    Gap = MAX(Gap, (C - Prev + 960) MOD 960)
+    Prev = C
+    Steps = Steps + PaceSteps()
+    SELECT CASE Mode
+    CASE 1
+        IF Elapsed() >= 10 THEN
+            Mode = 0
+            CALL Report(1, "P1 idle 10 s")
+            CALL Results
+            Info$ = "Idle: done"
+        END IF
+    CASE 2
+        FOR I = 1 TO 8
+            DRAW FILL 4 + I * 20, 140, 16, 24, Events MOD 9
+        NEXT I
+        IF Elapsed() >= 10 THEN
+            Mode = 0
+            CALL Report(1, "P2 load 10 s")
+            CALL Results
+            Info$ = "Load: done"
+        END IF
+    CASE 3
+        CALL HeldKeys
+    CASE 4
+        IF Elapsed() >= 5 THEN
+            Mode = 0
+            R$(2) = "R1 5 s: " + STR$(Events) + " events after " + STR$(Last) + " restarts"
+            CALL Results
+            Info$ = "Restart: done"
+        ELSE
+            IF Elapsed() > Last THEN
+                Last = Last + 1
+                TIMER OFF
+                TIMER ON
+            END IF
+        END IF
+    END SELECT
+END SUB
+
+SUB Quit
+    TIMER OFF
+    EXIT
+END SUB

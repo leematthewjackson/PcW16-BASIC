@@ -1,0 +1,353 @@
+' REPORTER (M12 Stage D): a small graphical reporter. A list of up to 12
+' named figures, kept in REPORT.PDB, shown as a table beside a bar chart or
+' a line chart; change a figure and the chart is drawn again from it.
+'
+' Use: Up / Down or a click on the table choose a row (its bar is drawn
+' darker); Edit (or Return) opens the row's label and value; Apply puts
+' them back, Add makes a new row, Delete removes the chosen one. Bars /
+' Lines (Ctrl+B, Ctrl+L) switch the chart; Save (Ctrl+S) keeps the figures
+' in REPORT.PDB (REPORT.BAK is the previous copy); Print (Ctrl+P) prints
+' the table and the bar chart on one A4 page; Quit (Ctrl+Q) asks about
+' unsaved changes. Values are whole numbers from 0 to 20000.
+' At the first start, without REPORT.PDB, it shows sample figures.
+' The program writes REPORT.PDB, REPORT.NEW and REPORT.BAK in the build
+' folder (\PCW\FOLDER01 by default) and nothing else.
+' Build with --runtime-banks all (python3 tools/build.py examples/reporter.pbas --runtime-banks all)
+INCLUDE "lib/app.pbas"
+INCLUDE "lib/chart.pbas"
+INCLUDE "lib/chartprt.pbas"
+
+CONST FILE = "REPORT.PDB"
+CONST ROWH = 16
+CONST TABLEW = 196
+
+TYPE Figure
+    Id AS INTEGER
+    Label AS STRING * 12
+    Value AS INTEGER
+END TYPE
+
+DIM Rows(12) AS Figure BANKED
+DIM Count AS INTEGER
+DIM Sel AS INTEGER
+DIM ShowLines AS BOOLEAN
+DIM EdLabel$ AS STRING * 12
+DIM EdValue AS INTEGER
+DIM Info$ AS STRING * 24
+DIM OnEdit AS BOOLEAN
+
+WINDOW Main, "REPORTER", LARGE
+LABEL AppStatus$
+CANVAS 560, 232, PAINT Paint, MOUSE Mouse, KEYS Keys
+BUTTON "Edit", ShowEdit, DEFAULT
+BUTTON "Bars", UseBars
+BUTTON "Lines", UseLines
+BUTTON "Save", SaveFigures
+BUTTON "Print", PrintReport
+BUTTON "Quit", QuitApp
+
+WINDOW Editor, "Figure", LARGE
+LABEL Info$
+TEXTBOX EdLabel$, "Label"
+NUMBERBOX EdValue, "Value (0 to 20000)", MIN 0, MAX 20000
+BUTTON "Apply", ApplyEdit, DEFAULT
+BUTTON "Add", AddRow
+BUTTON "Delete", DeleteRow
+BUTTON "Back", BackToMain
+
+MENU "File"
+    ITEM "Save", SaveFigures, KEY "S"
+    ITEM "Print", PrintReport, KEY "P"
+    ITEM "Quit", QuitApp, KEY "Q"
+END MENU
+MENU "View"
+    ITEM "Bars", UseBars, KEY "B", TICK BarsOn
+    ITEM "Lines", UseLines, KEY "L", TICK LinesOn
+END MENU
+
+' ---------------------------------------------------------------- data
+
+SUB Sample
+    LOCAL I AS INTEGER
+    Count = 0
+    FOR I = 1 TO 6
+        DB NEW Rows, Count
+    NEXT I
+    Rows(1).Label = "January"
+    Rows(1).Value = 120
+    Rows(2).Label = "February"
+    Rows(2).Value = 345
+    Rows(3).Label = "March"
+    Rows(3).Value = 78
+    Rows(4).Label = "April"
+    Rows(4).Value = 210
+    Rows(5).Label = "May"
+    Rows(5).Value = 32
+    Rows(6).Label = "June"
+    Rows(6).Value = 164
+END SUB
+
+' The chart library's copy of the figures.
+SUB ToChart
+    LOCAL I AS INTEGER
+    ChartN = Count
+    FOR I = 1 TO Count
+        ChartV(I) = Rows(I).Value
+        ChartL$(I) = Rows(I).Label
+    NEXT I
+    ChartSelected = Sel
+END SUB
+
+FUNCTION Total() AS INTEGER
+    LOCAL I AS INTEGER
+    LOCAL T AS REAL
+    T = 0
+    FOR I = 1 TO Count
+        T = T + Rows(I).Value
+    NEXT I
+    IF T > 32767 THEN
+        RETURN -1
+    END IF
+    RETURN CINT(T)
+END FUNCTION
+
+FUNCTION TotalText$() AS STRING
+    IF Total() < 0 THEN
+        RETURN ">32767"
+    END IF
+    RETURN STR$(Total())
+END FUNCTION
+
+SUB ShowStatus
+    LOCAL S$ AS STRING
+    S$ = STR$(Count) + " rows, total " + TotalText$()
+    IF AppDirty THEN
+        S$ = S$ + " *"
+    END IF
+    CALL AppSay(S$)
+END SUB
+
+' ---------------------------------------------------------------- screen
+
+SUB DrawTable
+    LOCAL I AS INTEGER
+    LOCAL V$ AS STRING
+    DRAW FILL 0, 0, TABLEW, 232, 8
+    DRAW TEXT 4, 0, "Label"
+    DRAW TEXT TABLEW - 8 - TEXTWIDTH("Value"), 0, "Value"
+    DRAW LINE 0, ROWH + 1, TABLEW - 1, ROWH + 1
+    FOR I = 1 TO Count
+        DRAW TEXT 4, 2 + I * ROWH, Rows(I).Label
+        V$ = STR$(Rows(I).Value)
+        DRAW TEXT TABLEW - 8 - TEXTWIDTH(V$), 2 + I * ROWH, V$
+    NEXT I
+    DRAW LINE 0, 4 + 13 * ROWH, TABLEW - 1, 4 + 13 * ROWH
+    DRAW TEXT 4, 6 + 13 * ROWH, "Total"
+    DRAW TEXT TABLEW - 8 - TEXTWIDTH(TotalText$()), 6 + 13 * ROWH, TotalText$()
+    IF Sel >= 1 THEN
+        DRAW INVERT 0, 2 + Sel * ROWH, TABLEW, ROWH
+    END IF
+    DRAW LINE TABLEW + 2, 0, TABLEW + 2, 231
+END SUB
+
+SUB DrawChart
+    CALL ToChart
+    IF ShowLines THEN
+        CALL ChartLines(TABLEW + 6, 0, 560 - TABLEW - 6, 232)
+    ELSE
+        CALL ChartBars(TABLEW + 6, 0, 560 - TABLEW - 6, 232)
+    END IF
+END SUB
+
+SUB Paint
+    CALL DrawTable
+    CALL DrawChart
+    CALL ShowStatus
+END SUB
+
+SUB Choose(N AS INTEGER)
+    IF N < 1 OR N > Count THEN
+        EXIT SUB
+    END IF
+    Sel = N
+    CALL Paint
+END SUB
+
+SUB Mouse
+    IF MOUSEEVENT = 1 AND MOUSEX < TABLEW THEN
+        CALL Choose((MOUSEY - 2) / ROWH)
+    END IF
+END SUB
+
+SUB Keys
+    IF (KEYSHIFT AND 4) <> 0 THEN
+        EXIT SUB                    ' Ctrl keys belong to the menus
+    END IF
+    SELECT CASE KEYCODE
+    CASE 224
+        CALL Choose(Sel - 1)
+    CASE 225
+        CALL Choose(Sel + 1)
+    END SELECT
+END SUB
+
+SUB UseBars
+    ShowLines = FALSE
+    BarsOn = TRUE
+    LinesOn = FALSE
+    IF NOT OnEdit THEN
+        CALL DrawChart
+    END IF
+END SUB
+
+SUB UseLines
+    ShowLines = TRUE
+    BarsOn = FALSE
+    LinesOn = TRUE
+    IF NOT OnEdit THEN
+        CALL DrawChart
+    END IF
+END SUB
+
+' ---------------------------------------------------------------- editing
+
+SUB ShowEdit
+    IF Sel >= 1 THEN
+        EdLabel$ = Rows(Sel).Label
+        EdValue = Rows(Sel).Value
+        Info$ = "Figure " + STR$(Sel) + " of " + STR$(Count)
+    ELSE
+        EdLabel$ = ""
+        EdValue = 0
+        Info$ = "No figure chosen: Add"
+    END IF
+    OnEdit = TRUE
+    SHOW Editor
+END SUB
+
+SUB BackToMain
+    OnEdit = FALSE
+    SHOW Main
+END SUB
+
+SUB ApplyEdit
+    IF Sel < 1 THEN
+        MESSAGE "Choose a figure first, or press Add"
+        EXIT SUB
+    END IF
+    Rows(Sel).Label = TRIM$(EdLabel$)
+    Rows(Sel).Value = EdValue
+    CALL AppChanged
+    CALL BackToMain
+END SUB
+
+SUB AddRow
+    IF Count >= CHARTMAX THEN
+        MESSAGE "A report has at most " + STR$(CHARTMAX) + " figures"
+        EXIT SUB
+    END IF
+    DB NEW Rows, Count
+    IF IOERR <> 0 THEN
+        CALL AppFail("Not added", IOERR)
+        EXIT SUB
+    END IF
+    Rows(Count).Label = TRIM$(EdLabel$)
+    Rows(Count).Value = EdValue
+    Sel = Count
+    CALL AppChanged
+    CALL BackToMain
+END SUB
+
+SUB DeleteRow
+    IF Sel < 1 THEN
+        EXIT SUB
+    END IF
+    DB DELETE Rows, Count, Sel
+    Sel = MIN(Sel, Count)
+    CALL AppChanged
+    CALL BackToMain
+END SUB
+
+' ---------------------------------------------------------------- files
+
+SUB SaveFigures
+    DB SAVE Rows, Count, FILE
+    IF IOERR = 0 THEN
+        CALL AppSaved
+    ELSE
+        CALL AppFail("Not saved", IOERR)
+    END IF
+    IF NOT OnEdit THEN
+        CALL ShowStatus
+    END IF
+END SUB
+
+FUNCTION AppSave() AS BOOLEAN
+    CALL SaveFigures
+    RETURN NOT AppDirty
+END FUNCTION
+
+SUB QuitApp
+    IF AppMayClose() THEN
+        EXIT
+    END IF
+END SUB
+
+' ---------------------------------------------------------------- printing
+
+SUB PrintReport
+    LOCAL I AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL V$ AS STRING
+    PAGE NEW
+    IF IOERR <> 0 THEN
+        MESSAGE "Not printed: error " + STR$(IOERR)
+        EXIT SUB
+    END IF
+    PAGE FONT 14, BOLD
+    PAGE TEXT 0, 0, "Report"
+    PAGE FONT 10, BOLD
+    PAGE TEXT 0, 30, "Label"
+    PAGE TEXT 200 - PAGEWIDTH("Value"), 30, "Value"
+    PAGE LINE 0, 46, 200, 46
+    PAGE FONT 10
+    FOR I = 1 TO Count
+        Y = 34 + 16 * I
+        PAGE TEXT 0, Y, Rows(I).Label
+        V$ = STR$(Rows(I).Value)
+        PAGE TEXT 200 - PAGEWIDTH(V$), Y, V$
+    NEXT I
+    Y = 38 + 16 * (Count + 1)
+    PAGE LINE 0, Y - 2, 200, Y - 2
+    PAGE FONT 10, BOLD
+    PAGE TEXT 0, Y, "Total"
+    PAGE TEXT 200 - PAGEWIDTH(TotalText$()), Y, TotalText$()
+    PAGE FONT 8
+    CALL ToChart
+    CALL ChartPrintBars(0, 300, 500, 300)
+    PAGE PRINT
+    IF IOERR <> 0 THEN
+        MESSAGE "Not printed: error " + STR$(IOERR)
+    ELSE
+        CALL AppSay("Printed")
+    END IF
+END SUB
+
+' ---------------------------------------------------------------- start
+
+BarsOn = TRUE
+DB LOAD Rows, Count, FILE
+IF IOERR = 2 THEN
+    CALL Sample
+ELSE
+    IF IOERR <> 0 THEN
+        CALL AppFail(FILE, IOERR)
+        CALL Sample
+    END IF
+END IF
+IF DBRECOVERED <> 0 THEN
+    MESSAGE FILE + " was recovered from a copy: save it"
+    CALL AppChanged
+END IF
+Sel = MIN(1, Count)
+END

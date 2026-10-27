@@ -1,0 +1,51 @@
+' TBPROBE (M9, MDEDIT E9 follow-up): does a TEXTBOX keep its variable's
+' value in XAnne? MDEDIT's E9 save failed with an empty file name after the
+' Tools window (a second window, TEXTBOX bound to STRING * 13) had been
+' used. This compares, without typing anything:
+'   M13$  STRING * 13 in the first window
+'   S13$  STRING * 13 in a second window
+'   SLong$ STRING (full capacity) in the second window
+' All three start as "EDTEST.MD". Each Check shows an alert with every
+' value in brackets and its length; expected everywhere: [EDTEST.MD] 9.
+' No files; no memory beyond the program (docs/M9-ACCEPTANCE.md, TB1-TB4).
+DIM M13$ AS STRING * 13
+DIM S13$ AS STRING * 13
+DIM SLong$ AS STRING
+
+WINDOW First, "Textbox probe"
+TEXTBOX M13$, "Short here"
+BUTTON "Check here", CheckFirst
+BUTTON "Second window", ShowSecond
+BUTTON "Quit", Finish
+
+WINDOW Second, "Textbox probe - second"
+TEXTBOX S13$, "Short"
+TEXTBOX SLong$, "Long"
+BUTTON "Check", CheckSecond
+BUTTON "Back", BackFirst
+
+SUB CheckFirst
+    MESSAGE "TB1 M[" + M13$ + "]" + STR$(LEN(M13$))
+END SUB
+
+SUB ShowSecond
+    SHOW Second
+END SUB
+
+SUB CheckSecond
+    MESSAGE "TB2 S[" + S13$ + "]" + STR$(LEN(S13$)) + " L[" + SLong$ + "]" + STR$(LEN(SLong$))
+END SUB
+
+SUB BackFirst
+    SHOW First
+END SUB
+
+SUB Finish
+    MESSAGE "TB4 M[" + M13$ + "] S[" + S13$ + "] L[" + SLong$ + "]"
+    EXIT
+END SUB
+
+M13$ = "EDTEST.MD"
+S13$ = "EDTEST.MD"
+SLong$ = "EDTEST.MD"
+END

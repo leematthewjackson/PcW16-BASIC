@@ -1,0 +1,25 @@
+' arith_demo.pbas: signed arithmetic and all six comparisons (M2, no GUI).
+' XAnne shows six "yes" alerts in order; exact texts are in examples/README.md.
+DIM Miles AS INTEGER
+DIM Fare AS INTEGER
+Miles = -6 * -3 + -9            ' 9: unary minus on operands, * then +
+Fare = 5 * 4 - -10              ' 30: subtracting a negative
+IF Miles - 30 < Miles THEN      ' -21 < 9, computed negative on the left
+    MESSAGE STR$(Miles - 30) + " < " + STR$(Miles) + ": yes"
+END IF
+IF Miles <= Fare THEN           ' 9 <= 30
+    MESSAGE STR$(Miles) + " <= " + STR$(Fare) + ": yes"
+END IF
+IF Fare > Miles THEN            ' 30 > 9
+    MESSAGE STR$(Fare) + " > " + STR$(Miles) + ": yes"
+END IF
+IF Miles >= -9 THEN             ' 9 >= -9
+    MESSAGE STR$(Miles) + " >= -9: yes"
+END IF
+IF -(Miles - Fare) = Miles + 12 THEN    ' 21 = 21, unary minus over ( )
+    MESSAGE STR$(-(Miles - Fare)) + " = " + STR$(Miles + 12) + ": yes"
+END IF
+IF Miles * Fare <> Fare THEN    ' 270 <> 30
+    MESSAGE STR$(Miles * Fare) + " <> " + STR$(Fare) + ": yes"
+END IF
+END

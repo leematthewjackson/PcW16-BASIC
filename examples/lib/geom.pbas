@@ -1,0 +1,102 @@
+' geom.pbas: points and rectangles for graphical programs.
+' INCLUDE "lib/geom.pbas" near the top of a program. docs/libraries/geom.md.
+'
+' A rectangle is X, Y, W, H in pixels: from X to X + W - 1 across and Y to
+' Y + H - 1 down. A rectangle with W or H 0 (or less) is empty: it holds no
+' pixel, meets nothing and is ignored by GeomUnite.
+'
+'   FUNCTION GeomIn(X, Y, RX, RY, RW, RH) AS BOOLEAN
+'       the pixel X, Y is in the rectangle
+'   FUNCTION GeomMeets(AX, AY, AW, AH, BX, BY, BW, BH) AS BOOLEAN
+'       the two rectangles share at least one pixel
+'   FUNCTION GeomClamp(V, Lo, Hi) AS INTEGER
+'       V kept within Lo .. Hi
+'   SUB GeomSpan(X1, Y1, X2, Y2)
+'       the rectangle whose opposite corners are the pixels X1, Y1 and
+'       X2, Y2 (both included, in any order): a rubber band's rectangle
+'   SUB GeomClip(X, Y, W, H, CX, CY, CW, CH)
+'       the part of X, Y, W, H inside CX, CY, CW, CH; GeomW = 0 when there
+'       is none. GeomDX, GeomDY say how far its top-left corner moved
+'       (GeomX - X, GeomY - Y): to draw the visible part of a bitmap drawn
+'       at X, Y, use the part GeomDX, GeomDY, GeomW, GeomH of it
+'   SUB GeomUnite(AX, AY, AW, AH, BX, BY, BW, BH)
+'       the smallest rectangle holding both (an empty one is ignored)
+' The SUBs leave their rectangle in GeomX, GeomY, GeomW, GeomH.
+' Names: everything here starts with Geom.
+DIM GeomX AS INTEGER
+DIM GeomY AS INTEGER
+DIM GeomW AS INTEGER
+DIM GeomH AS INTEGER
+DIM GeomDX AS INTEGER
+DIM GeomDY AS INTEGER
+
+FUNCTION GeomIn(X AS INTEGER, Y AS INTEGER, RX AS INTEGER, RY AS INTEGER, RW AS INTEGER, RH AS INTEGER) AS BOOLEAN
+    RETURN X >= RX AND Y >= RY AND X < RX + RW AND Y < RY + RH
+END FUNCTION
+
+FUNCTION GeomMeets(AX AS INTEGER, AY AS INTEGER, AW AS INTEGER, AH AS INTEGER, BX AS INTEGER, BY AS INTEGER, BW AS INTEGER, BH AS INTEGER) AS BOOLEAN
+    IF AW <= 0 OR AH <= 0 OR BW <= 0 OR BH <= 0 THEN
+        RETURN FALSE
+    END IF
+    RETURN AX < BX + BW AND BX < AX + AW AND AY < BY + BH AND BY < AY + AH
+END FUNCTION
+
+FUNCTION GeomClamp(V AS INTEGER, Lo AS INTEGER, Hi AS INTEGER) AS INTEGER
+    IF V < Lo THEN
+        RETURN Lo
+    END IF
+    IF V > Hi THEN
+        RETURN Hi
+    END IF
+    RETURN V
+END FUNCTION
+
+SUB GeomSpan(X1 AS INTEGER, Y1 AS INTEGER, X2 AS INTEGER, Y2 AS INTEGER)
+    GeomX = MIN(X1, X2)
+    GeomY = MIN(Y1, Y2)
+    GeomW = MAX(X1, X2) - GeomX + 1
+    GeomH = MAX(Y1, Y2) - GeomY + 1
+END SUB
+
+SUB GeomClip(X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER, CX AS INTEGER, CY AS INTEGER, CW AS INTEGER, CH AS INTEGER)
+    LOCAL R AS INTEGER
+    LOCAL B AS INTEGER
+    GeomX = MAX(X, CX)
+    GeomY = MAX(Y, CY)
+    R = MIN(X + W, CX + CW)
+    B = MIN(Y + H, CY + CH)
+    GeomDX = GeomX - X
+    GeomDY = GeomY - Y
+    IF R <= GeomX OR B <= GeomY OR W <= 0 OR H <= 0 THEN
+        GeomW = 0
+        GeomH = 0
+    ELSE
+        GeomW = R - GeomX
+        GeomH = B - GeomY
+    END IF
+END SUB
+
+SUB GeomUnite(AX AS INTEGER, AY AS INTEGER, AW AS INTEGER, AH AS INTEGER, BX AS INTEGER, BY AS INTEGER, BW AS INTEGER, BH AS INTEGER)
+    LOCAL R AS INTEGER
+    LOCAL B AS INTEGER
+    IF AW <= 0 OR AH <= 0 THEN
+        GeomX = BX
+        GeomY = BY
+        GeomW = MAX(BW, 0)
+        GeomH = MAX(BH, 0)
+        EXIT SUB
+    END IF
+    IF BW <= 0 OR BH <= 0 THEN
+        GeomX = AX
+        GeomY = AY
+        GeomW = AW
+        GeomH = AH
+        EXIT SUB
+    END IF
+    GeomX = MIN(AX, BX)
+    GeomY = MIN(AY, BY)
+    R = MAX(AX + AW, BX + BW)
+    B = MAX(AY + AH, BY + BH)
+    GeomW = R - GeomX
+    GeomH = B - GeomY
+END SUB

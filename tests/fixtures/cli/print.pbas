@@ -1,0 +1,3 @@
+' Test fixture (M14): PRINT to the screen does not exist.
+PRINT "hello"
+END

@@ -1,0 +1,36 @@
+' Char Codes (M5b example): a Caesar cipher. ASC gives each letter's code,
+' MOD wraps the alphabet, CHR$ turns codes back into letters, and the
+' M5a string expressions build the result one character at a time.
+DIM Plain$ AS STRING
+DIM Coded$ AS STRING
+DIM Back$ AS STRING
+DIM Ch$ AS STRING
+DIM I AS INTEGER
+DIM C AS INTEGER
+DIM Shift AS INTEGER
+Plain$ = "HELLO PCW16"
+Shift = 3
+FOR I = 1 TO LEN(Plain$)
+    Ch$ = MID$(Plain$, I, 1)
+    C = ASC(Ch$)
+    IF Ch$ >= "A" THEN
+        IF Ch$ <= "Z" THEN
+            Ch$ = CHR$((C - 65 + Shift) MOD 26 + 65)
+        END IF
+    END IF
+    Coded$ = Coded$ + Ch$
+NEXT I
+MESSAGE "Coded: " + Coded$
+FOR I = 1 TO LEN(Coded$)
+    Ch$ = MID$(Coded$, I, 1)
+    C = ASC(Ch$)
+    IF Ch$ >= "A" THEN
+        IF Ch$ <= "Z" THEN
+            Ch$ = CHR$((C - 65 + 26 - Shift) MOD 26 + 65)
+        END IF
+    END IF
+    Back$ = Back$ + Ch$
+NEXT I
+MESSAGE "Decoded: " + Back$
+MESSAGE "Code of " + LEFT$(Plain$, 1) + " is " + STR$(ASC(Plain$)) + ", empty gives " + STR$(ASC(""))
+END

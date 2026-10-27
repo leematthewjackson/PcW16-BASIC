@@ -1,0 +1,96 @@
+' app.pbas: what every document application repeats.
+' INCLUDE "lib/app.pbas" near the top of a program, before its own SUBs.
+'
+' Status line
+'   The library declares AppStatus$ (a LABEL shows at most 24 characters,
+'   M5d). Put "LABEL AppStatus$" in a window, then CALL AppSay(Text$): the
+'   text is cut to 24 characters, so a status can never stop the program.
+'
+' Unsaved changes
+'   CALL AppChanged after any change, CALL AppSaved after a good save;
+'   AppDirty tells which. FUNCTION AppMayClose() AS BOOLEAN asks
+'   "Unsaved changes" with Save / Discard / Cancel when AppDirty is TRUE:
+'   Save calls the program's own FUNCTION AppSave() AS BOOLEAN (which must
+'   save and return TRUE if it did); the result is TRUE when the program
+'   may go on (close, open another file), FALSE for Cancel or a failed save.
+'   A program that includes this library defines AppSave.
+'
+' File errors
+'   FUNCTION AppError$(Code AS INTEGER) AS STRING: an IOERR code in a few
+'   words (LANGUAGE-SPEC §7.1 files, §5.7 TEXT, §5.9 databases).
+'   SUB AppFail(What$ AS STRING, Code AS INTEGER) shows "What: meaning"
+'   as an alert.
+'
+' Names: everything here starts with App; a program must not reuse them.
+DIM AppStatus$ AS STRING * 24
+DIM AppDirty AS BOOLEAN
+
+SUB AppSay(Text$ AS STRING)
+    AppStatus$ = LEFT$(Text$, 24)
+END SUB
+
+SUB AppChanged
+    AppDirty = TRUE
+END SUB
+
+SUB AppSaved
+    AppDirty = FALSE
+END SUB
+
+FUNCTION AppMayClose() AS BOOLEAN
+    LOCAL A AS INTEGER
+    IF NOT AppDirty THEN
+        RETURN TRUE
+    END IF
+    A = ASK("Unsaved changes", "Save", "Discard", "Cancel")
+    IF A = 1 THEN
+        IF AppSave() THEN
+            RETURN NOT AppDirty
+        END IF
+        RETURN FALSE
+    END IF
+    RETURN A = 2
+END FUNCTION
+
+FUNCTION AppError$(Code AS INTEGER) AS STRING
+    SELECT CASE Code
+    CASE 0
+        RETURN "no error"
+    CASE 2
+        RETURN "not found"
+    CASE 3
+        RETURN "folder not found"
+    CASE 4
+        RETURN "too many open files"
+    CASE 5
+        RETURN "access denied"
+    CASE 19
+        RETURN "disk write-protected"
+    CASE 80
+        RETURN "the name exists"
+    CASE 163
+        RETURN "disk full"
+    CASE 240
+        RETURN "drive error"
+    CASE 246
+        RETURN "too large"
+    CASE 247
+        RETURN "invalid name"
+    CASE 248
+        RETURN "not a database"
+    CASE 249
+        RETURN "another record type"
+    CASE 250
+        RETURN "another file version"
+    CASE 251
+        RETURN "damaged"
+    CASE 252
+        RETURN "full"
+    CASE ELSE
+        RETURN "error " + STR$(Code)
+    END SELECT
+END FUNCTION
+
+SUB AppFail(What$ AS STRING, Code AS INTEGER)
+    MESSAGE What$ + ": " + AppError$(Code)
+END SUB

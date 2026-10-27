@@ -1,0 +1,123 @@
+' M5c XAnne edge cases: precedence, short-circuit guards, case conversion,
+' EXIT SUB and the deepest allowed CALL chain (16 procedures active at
+' once). Ends on purpose with EXIT from two procedures deep.
+DIM A AS INTEGER
+DIM B AS INTEGER
+DIM T AS BOOLEAN
+DIM S$ AS STRING
+DIM Depth AS INTEGER
+DIM Deepest AS INTEGER
+A = 1
+B = 2
+T = NOT A = B
+CALL Mark
+T = TRUE OR FALSE AND FALSE
+CALL Mark
+T = NOT TRUE OR TRUE
+CALL Mark
+T = NOT NOT TRUE
+CALL Mark
+T = FALSE AND TRUE OR TRUE AND NOT FALSE
+CALL Mark
+T = A < B AND B < A
+CALL Mark
+MESSAGE "1 " + S$
+S$ = ""
+B = 0
+T = B <> 0 AND A / B > 0
+CALL Mark
+T = B = 0 OR A / B > 0
+CALL Mark
+T = LEN("99999") < 5 AND VAL("99999") > 0
+CALL Mark
+MESSAGE "2 " + S$
+S$ = "PcW16 abc-XYZ" + CHR$(200)
+S$ = UCASE$(S$) + "/" + LCASE$(S$)
+MESSAGE "3 " + LEFT$(S$, 13) + "/" + MID$(S$, 16, 13) + " " + STR$(ASC(RIGHT$(S$, 1)))
+MESSAGE "4 " + UCASE$("az") + LCASE$("AZ") + " " + STR$(ASC(UCASE$("`"))) + " " + STR$(ASC(UCASE$("{"))) + " " + STR$(ASC(LCASE$("@"))) + " " + STR$(ASC(LCASE$("[")))
+CALL L1
+MESSAGE "5 " + STR$(Deepest) + " " + STR$(Depth)
+MESSAGE "6 about to EXIT from 2 procedures deep"
+CALL Outer
+MESSAGE "7 never shown"
+SUB Mark
+    IF T THEN
+        S$ = S$ + "T"
+    ELSE
+        S$ = S$ + "F"
+    END IF
+END SUB
+SUB L1
+    Depth = Depth + 1
+    CALL L2
+END SUB
+SUB L2
+    Depth = Depth + 1
+    CALL L3
+END SUB
+SUB L3
+    Depth = Depth + 1
+    CALL L4
+END SUB
+SUB L4
+    Depth = Depth + 1
+    CALL L5
+END SUB
+SUB L5
+    Depth = Depth + 1
+    CALL L6
+END SUB
+SUB L6
+    Depth = Depth + 1
+    CALL L7
+END SUB
+SUB L7
+    Depth = Depth + 1
+    CALL L8
+END SUB
+SUB L8
+    Depth = Depth + 1
+    CALL L9
+END SUB
+SUB L9
+    Depth = Depth + 1
+    CALL L10
+END SUB
+SUB L10
+    Depth = Depth + 1
+    CALL L11
+END SUB
+SUB L11
+    Depth = Depth + 1
+    CALL L12
+END SUB
+SUB L12
+    Depth = Depth + 1
+    CALL L13
+END SUB
+SUB L13
+    Depth = Depth + 1
+    CALL L14
+END SUB
+SUB L14
+    Depth = Depth + 1
+    CALL L15
+END SUB
+SUB L15
+    Depth = Depth + 1
+    CALL L16
+END SUB
+SUB L16
+    Depth = Depth + 1
+    Deepest = Depth
+    EXIT SUB
+    Deepest = 99
+END SUB
+SUB Outer
+    CALL Inner
+    MESSAGE "never shown (Outer)"
+END SUB
+SUB Inner
+    EXIT
+END SUB
+END

@@ -1,0 +1,57 @@
+' Grade report (M5c example): a program built from procedures.
+' The main line CALLs Report for each student; Report CALLs Grade and
+' Remark. AND/OR combine the score rules (AND binds tighter than OR),
+' EXIT SUB leaves Remark early, and UCASE$/LCASE$ format the names.
+DIM Name$ AS STRING
+DIM Line$ AS STRING
+DIM Letter$ AS STRING
+DIM Note$ AS STRING
+DIM Score AS INTEGER
+DIM Bonus AS BOOLEAN
+DIM Passed AS INTEGER
+Name$ = "ADA LOVELACE"
+Score = 91
+Bonus = FALSE
+CALL Report
+Name$ = "charles babbage"
+Score = 68
+Bonus = TRUE
+CALL Report
+Name$ = "grace"
+Score = 35
+Bonus = TRUE
+CALL Report
+MESSAGE STR$(Passed) + " of 3 passed"
+SUB Report
+    CALL Grade
+    CALL Remark
+    Line$ = UCASE$(LEFT$(Name$, 1)) + LCASE$(MID$(Name$, 2, 40)) + ": " + Letter$ + Note$
+    MESSAGE Line$
+END SUB
+SUB Grade
+    IF Score >= 90 OR Score >= 85 AND Bonus THEN
+        Letter$ = "A"
+    ELSE
+        IF Score >= 70 OR Score >= 65 AND Bonus THEN
+            Letter$ = "B"
+        ELSE
+            IF Score >= 50 THEN
+                Letter$ = "C"
+            ELSE
+                Letter$ = "F"
+            END IF
+        END IF
+    END IF
+END SUB
+SUB Remark
+    Note$ = ""
+    IF Letter$ = "F" THEN
+        Note$ = " (resit)"
+        EXIT SUB
+    END IF
+    Passed = Passed + 1
+    IF NOT Bonus AND Score >= 90 THEN
+        Note$ = " (top, no bonus needed)"
+    END IF
+END SUB
+END

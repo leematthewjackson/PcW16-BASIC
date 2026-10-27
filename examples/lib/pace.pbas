@@ -1,0 +1,72 @@
+' pace.pbas: steps of real time for animation and games,
+' however often the TIMER comes. INCLUDE "lib/pace.pbas" near the top of a
+' program with a TIMER. docs/libraries/pace.md, LANGUAGE-SPEC §5.15.
+'
+' A TIMER's handler runs are not a count of time. A handler can take
+' longer than its interval; one that falls behind is not run again to catch
+' up; and a Rosanne timer (EVERY n seconds, or more than 240 TICKS) posts
+' one event however many intervals have passed (PCW045.SYS block 6 #6C4C,
+' #6958; static), and in XAnne stopped once a second (measured).
+' A program that moves things a fixed amount an event slows down as much.
+' Instead, count the time that has passed (CLOCKTICKS, in 1/16 s) and do as
+' many steps of a fixed length as it covers, then draw once:
+'
+'   SUB PaceStart(StepTicks AS INTEGER, MaxSteps AS INTEGER)
+'       steps of StepTicks sixteenths of a second; at most MaxSteps at once
+'       (time beyond that is dropped and counted in PaceLost: after a long
+'       stall the game slows down for a moment instead of leaping ahead)
+'   FUNCTION PaceSteps() AS INTEGER
+'       the steps due since the last call (0..MaxSteps); call it once in
+'       each TIMER handler, do that many steps, and draw if it is not 0
+' PaceStart again after a pause, so the time paused is not caught up.
+' Counters since PaceStart (each stops at 30000): PaceTotal steps done,
+' PaceCalls calls of PaceSteps that did steps (the frames drawn), PaceLost
+' steps dropped by MaxSteps. The clock is read within the minute (0..959):
+' a call more than half a minute after the last one, or a clock that went
+' back, counts no time. Names: everything here starts with Pace.
+DIM PaceLast AS INTEGER
+DIM PaceStep AS INTEGER
+DIM PaceMax AS INTEGER
+DIM PaceAcc AS INTEGER
+DIM PaceTotal AS INTEGER
+DIM PaceCalls AS INTEGER
+DIM PaceLost AS INTEGER
+
+SUB PaceStart(StepTicks AS INTEGER, MaxSteps AS INTEGER)
+    PaceStep = MAX(StepTicks, 1)
+    PaceMax = MAX(MaxSteps, 1)
+    PaceLast = CLOCKTICKS
+    PaceAcc = 0
+    PaceTotal = 0
+    PaceCalls = 0
+    PaceLost = 0
+END SUB
+
+' N added to a counter that stops at 30000 (INTEGERs end at 32767).
+FUNCTION PaceAdd(C AS INTEGER, N AS INTEGER) AS INTEGER
+    RETURN MIN(C + N, 30000)
+END FUNCTION
+
+FUNCTION PaceSteps() AS INTEGER
+    LOCAL Now AS INTEGER
+    LOCAL D AS INTEGER
+    LOCAL N AS INTEGER
+    Now = CLOCKTICKS
+    D = (Now - PaceLast + 960) MOD 960
+    PaceLast = Now
+    IF D > 480 THEN
+        D = 0
+    END IF
+    PaceAcc = PaceAcc + D
+    N = PaceAcc / PaceStep
+    PaceAcc = PaceAcc - N * PaceStep
+    IF N > PaceMax THEN
+        PaceLost = PaceAdd(PaceLost, N - PaceMax)
+        N = PaceMax
+    END IF
+    IF N > 0 THEN
+        PaceTotal = PaceAdd(PaceTotal, N)
+        PaceCalls = PaceAdd(PaceCalls, 1)
+    END IF
+    RETURN N
+END FUNCTION

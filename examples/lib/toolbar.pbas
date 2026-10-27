@@ -1,0 +1,203 @@
+' toolbar.pbas: an icon palette and a pattern palette on a CANVAS.
+' INCLUDE "lib/toolbar.pbas" near the top of a program with a CANVAS.
+' docs/libraries/toolbar.md.
+'
+' Icons. The program keeps its icons in one BITMAP: square icons of
+' ToolSize pixels one under another (a strip ToolSize wide and ToolN *
+' ToolSize high, made with tools/pbimage.py sheet), and loads it before the
+' canvas is painted. It sets:
+'   ToolN       icons (1..24)          ToolSize   their size in pixels
+'   ToolX, ToolY  the palette's top-left corner on the canvas
+'   ToolAcross  icons a row (default ToolN: one row; 1: one column)
+'   ToolGap     pixels between icons (default 2)
+'   ToolSel     the selected icon (1..ToolN; 0 none)
+'   ToolOff(I)  TRUE: icon I is disabled (drawn greyed, not chosen)
+'   ToolKey(I)  a KEYCODE that chooses icon I (0 none)
+' and calls:
+'   SUB ToolPaint(Icons AS BITMAP)    draw every icon: the selected one
+'                                     inverted, disabled ones greyed
+'   FUNCTION ToolAt(X, Y) AS INTEGER  the icon under X, Y (0 none, and 0 for
+'                                     a disabled icon)
+'   SUB ToolPick(Icons AS BITMAP, I)  select icon I (redraws the two icons)
+'   FUNCTION ToolForKey(K) AS INTEGER the icon whose ToolKey is K (0 none)
+'
+' Patterns. SwatchN swatches (1..9) of SwatchSize pixels at SwatchX,
+' SwatchY, SwatchAcross a row (default SwatchN), each filled with
+' SwatchShade(I) (default I - 1: the DRAW FILL shades 0 black .. 8 white,
+' Rosanne's own patterns); SwatchSel is the chosen one.
+'   SUB SwatchPaint, FUNCTION SwatchAt(X, Y) AS INTEGER, SUB SwatchPick(I)
+' The chosen swatch has a double frame.
+' Names: everything here starts with Tool or Swatch.
+CONST TOOLMAX = 24
+DIM ToolN AS INTEGER
+DIM ToolSize AS INTEGER
+DIM ToolX AS INTEGER
+DIM ToolY AS INTEGER
+DIM ToolAcross AS INTEGER
+DIM ToolGap AS INTEGER
+DIM ToolSel AS INTEGER
+DIM ToolOff(24) AS BOOLEAN
+DIM ToolKey(24) AS INTEGER
+DIM ToolCX AS INTEGER
+DIM ToolCY AS INTEGER
+DIM SwatchN AS INTEGER
+DIM SwatchSize AS INTEGER
+DIM SwatchX AS INTEGER
+DIM SwatchY AS INTEGER
+DIM SwatchAcross AS INTEGER
+DIM SwatchSel AS INTEGER
+DIM SwatchShade(9) AS INTEGER
+DIM SwatchSet AS BOOLEAN
+
+' The top-left corner of icon I, in ToolCX, ToolCY.
+SUB ToolCell(I AS INTEGER)
+    LOCAL A AS INTEGER
+    LOCAL G AS INTEGER
+    A = ToolAcross
+    IF A <= 0 THEN
+        A = ToolN
+    END IF
+    G = ToolGap
+    IF G <= 0 THEN
+        G = 2
+    END IF
+    ToolCX = ToolX + ((I - 1) MOD A) * (ToolSize + G)
+    ToolCY = ToolY + ((I - 1) / A) * (ToolSize + G)
+END SUB
+
+' Draw icon I as it should look now.
+SUB ToolDraw(Icons AS BITMAP, I AS INTEGER)
+    LOCAL K AS INTEGER
+    LOCAL S AS INTEGER
+    S = ToolSize
+    CALL ToolCell(I)
+    BITMAP PUT Icons, ToolCX, ToolCY, 0, (I - 1) * S, S, S
+    IF ToolOff(I) THEN  ' greyed: white diagonals across it
+        DRAW INK WHITE
+        FOR K = 1 TO 2 * S - 3 STEP 2
+            IF K < S THEN
+                DRAW LINE ToolCX + K, ToolCY, ToolCX, ToolCY + K
+            ELSE
+                DRAW LINE ToolCX + S - 1, ToolCY + K - S + 1, ToolCX + K - S + 1, ToolCY + S - 1
+            END IF
+        NEXT K
+        DRAW INK BLACK
+    ELSE
+        IF I = ToolSel THEN
+            DRAW INVERT ToolCX, ToolCY, S, S
+        END IF
+    END IF
+END SUB
+
+SUB ToolPaint(Icons AS BITMAP)
+    LOCAL I AS INTEGER
+    FOR I = 1 TO ToolN
+        CALL ToolDraw(Icons, I)
+    NEXT I
+END SUB
+
+FUNCTION ToolAt(X AS INTEGER, Y AS INTEGER) AS INTEGER
+    LOCAL I AS INTEGER
+    FOR I = 1 TO ToolN
+        CALL ToolCell(I)
+        IF X >= ToolCX AND Y >= ToolCY AND X < ToolCX + ToolSize AND Y < ToolCY + ToolSize THEN
+            IF ToolOff(I) THEN
+                RETURN 0
+            END IF
+            RETURN I
+        END IF
+    NEXT I
+    RETURN 0
+END FUNCTION
+
+SUB ToolPick(Icons AS BITMAP, I AS INTEGER)
+    LOCAL Old AS INTEGER
+    IF I < 1 OR I > ToolN OR I = ToolSel THEN
+        EXIT SUB
+    END IF
+    IF ToolOff(I) THEN
+        EXIT SUB
+    END IF
+    Old = ToolSel
+    ToolSel = I
+    IF Old >= 1 AND Old <= ToolN THEN
+        CALL ToolDraw(Icons, Old)
+    END IF
+    CALL ToolDraw(Icons, I)
+END SUB
+
+FUNCTION ToolForKey(K AS INTEGER) AS INTEGER
+    LOCAL I AS INTEGER
+    FOR I = 1 TO ToolN
+        IF ToolKey(I) = K AND K <> 0 AND NOT ToolOff(I) THEN
+            RETURN I
+        END IF
+    NEXT I
+    RETURN 0
+END FUNCTION
+
+' ------------------------------------------------------------- swatches
+SUB SwatchDefaults
+    LOCAL I AS INTEGER
+    IF SwatchSet THEN
+        EXIT SUB
+    END IF
+    FOR I = 1 TO 9
+        SwatchShade(I) = I - 1
+    NEXT I
+    SwatchSet = TRUE
+END SUB
+
+SUB SwatchCell(I AS INTEGER)
+    LOCAL A AS INTEGER
+    A = SwatchAcross
+    IF A <= 0 THEN
+        A = SwatchN
+    END IF
+    ToolCX = SwatchX + ((I - 1) MOD A) * (SwatchSize + 4)
+    ToolCY = SwatchY + ((I - 1) / A) * (SwatchSize + 4)
+END SUB
+
+SUB SwatchDraw(I AS INTEGER)
+    LOCAL S AS INTEGER
+    S = SwatchSize
+    CALL SwatchDefaults
+    CALL SwatchCell(I)
+    DRAW FILL ToolCX - 2, ToolCY - 2, S + 4, S + 4, 8
+    DRAW FILL ToolCX, ToolCY, S, S, SwatchShade(I)
+    DRAW BOX ToolCX, ToolCY, S, S
+    IF I = SwatchSel THEN
+        DRAW BOX ToolCX - 2, ToolCY - 2, S + 4, S + 4
+    END IF
+END SUB
+
+SUB SwatchPaint
+    LOCAL I AS INTEGER
+    FOR I = 1 TO SwatchN
+        CALL SwatchDraw(I)
+    NEXT I
+END SUB
+
+FUNCTION SwatchAt(X AS INTEGER, Y AS INTEGER) AS INTEGER
+    LOCAL I AS INTEGER
+    FOR I = 1 TO SwatchN
+        CALL SwatchCell(I)
+        IF X >= ToolCX AND Y >= ToolCY AND X < ToolCX + SwatchSize AND Y < ToolCY + SwatchSize THEN
+            RETURN I
+        END IF
+    NEXT I
+    RETURN 0
+END FUNCTION
+
+SUB SwatchPick(I AS INTEGER)
+    LOCAL Old AS INTEGER
+    IF I < 1 OR I > SwatchN OR I = SwatchSel THEN
+        EXIT SUB
+    END IF
+    Old = SwatchSel
+    SwatchSel = I
+    IF Old >= 1 AND Old <= SwatchN THEN
+        CALL SwatchDraw(Old)
+    END IF
+    CALL SwatchDraw(I)
+END SUB

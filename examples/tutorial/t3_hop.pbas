@@ -1,0 +1,85 @@
+' Tutorial 3: a sprite that runs while a key is held and jumps.
+INCLUDE "../lib/geom.pbas"
+INCLUDE "../lib/sprite.pbas"
+INCLUDE "../lib/keys.pbas"
+INCLUDE "../lib/pace.pbas"
+
+CONST FLOOR = 128
+DIM Hero AS BITMAP * 16, 48
+DIM HeroM AS BITMAP * 16, 48
+DIM Back AS BITMAP * 320, 160
+DIM Status$ AS STRING * 24
+DIM VY AS INTEGER
+DIM Ready AS BOOLEAN
+
+WINDOW Main, "HOP", LARGE
+LABEL Status$
+CANVAS 320, 160, PAINT Paint, KEYS Keys
+BUTTON "Quit", Quit
+TIMER Update, EVERY 2 TICKS
+
+SUB Paint
+    IF NOT Ready THEN
+        DRAW CLEAR
+        DRAW FILL 0, FLOOR + 16, 320, 160 - FLOOR - 16, 4
+        BITMAP GET Back, 0, 0, 320, 160
+        Ready = TRUE
+    END IF
+    BITMAP PUT Back, 0, 0
+    CALL SpriteShow(Hero, HeroM, 1)
+END SUB
+
+SUB Update
+    LOCAL N AS INTEGER
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL D AS INTEGER
+    IF NOT Ready THEN
+        EXIT SUB
+    END IF
+    N = PaceSteps()
+    IF N = 0 THEN
+        EXIT SUB
+    END IF
+    X = SprX(1)
+    Y = SprY(1)
+    WHILE N > 0
+        D = KeyAxis(SC_LEFT, SC_RIGHT)
+        X = GeomClamp(X + 4 * D, 0, 320 - 16)
+        IF KEYDOWN(SC_SPACE) AND Y = FLOOR THEN
+            VY = -12
+        END IF
+        Y = MIN(Y + VY, FLOOR)
+        VY = MIN(VY + 2, 8)
+        N = N - 1
+    WEND
+    IF Y < FLOOR THEN
+        CALL SpriteMove(Hero, HeroM, Back, 1, X, Y, 2)
+    ELSE
+        CALL SpriteMove(Hero, HeroM, Back, 1, X, Y, ABS(D) * ((X / 4) MOD 2))
+    END IF
+    Status$ = "X " + STR$(X) + "  Y " + STR$(Y)
+END SUB
+
+SUB Keys
+    IF KEYCODE = KC_STOP THEN
+        CALL Quit
+    END IF
+END SUB
+
+SUB Quit
+    TIMER OFF
+    EXIT
+END SUB
+
+SprCW = 320
+SprCH = 160
+SprW(1) = 16
+SprH(1) = 16
+SprX(1) = 20
+SprY(1) = FLOOR
+BITMAP LOAD Hero, "T3HERO.PBI"
+BITMAP LOAD HeroM, "T3HEROM.PBI"
+CALL PaceStart(2, 4)
+Status$ = "Left / Right, Space"
+END

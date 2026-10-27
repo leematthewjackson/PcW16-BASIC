@@ -1,0 +1,47 @@
+' Preferences: checkboxes bound to BOOLEAN variables (M3b example).
+' Sound starts ticked; All on ticks every box by setting the variables.
+DIM Sound AS BOOLEAN
+DIM Dark AS BOOLEAN
+DIM AutoSave AS BOOLEAN
+DIM Count AS INTEGER
+DIM S1$ AS STRING
+DIM S2$ AS STRING
+DIM S3$ AS STRING
+Sound = TRUE
+WINDOW "Preferences"
+LABEL "Tick the options you want"
+CHECKBOX Sound, "Sound effects"
+CHECKBOX Dark, "Dark screen"
+CHECKBOX AutoSave, "Save automatically"
+BUTTON "Summary", ShowSummary
+BUTTON "All on", AllOn
+BUTTON "Quit", QuitPrefs
+SUB ShowSummary
+    Count = 0
+    S1$ = "off"
+    S2$ = "off"
+    S3$ = "off"
+    IF Sound THEN
+        S1$ = "on"
+        Count = Count + 1
+    END IF
+    IF Dark THEN
+        S2$ = "on"
+        Count = Count + 1
+    END IF
+    IF AutoSave THEN
+        S3$ = "on"
+        Count = Count + 1
+    END IF
+    MESSAGE "Sound " + S1$ + ", dark screen " + S2$
+    MESSAGE "Auto save " + S3$ + ": " + STR$(Count) + " of 3 chosen"
+END SUB
+SUB AllOn
+    Sound = TRUE
+    Dark = TRUE
+    AutoSave = TRUE
+END SUB
+SUB QuitPrefs
+    EXIT
+END SUB
+END

@@ -1,0 +1,113 @@
+' BANKPROBE (M9 Stage A): does a program whose SUBs and FUNCTIONs run in
+' code banks behave like one that fits a single 16K block? Built with
+'     --code-banks always --code-bank-limit 400
+' so its procedures are spread over several banks loaded by the program
+' itself (docs/M9-BANKED-CODE.md). Every handler below runs in a bank.
+'
+' Owner steps (docs/M9-ACCEPTANCE.md, A1):
+'   Run tests  three alerts, each "what happened [expected]"
+'   Probe menu > Count   the Menu line counts up by one per selection
+'   the Ticks line counts up about once a second (a TIMER in a bank)
+'   Error      "Runtime error: index out of range at line N"; the program ends
+'   Quit       the program ends
+' Files: writes, reads and deletes BANKPRB.TMP in its folder (an old copy is
+' deleted first). No other file is touched.
+DIM Status$ AS STRING
+DIM MenuLine$ AS STRING
+DIM TickLine$ AS STRING
+DIM Count AS INTEGER
+DIM Ticks AS INTEGER
+DIM Small(3) AS INTEGER
+DIM Probe AS INTEGER
+WINDOW "Bank probe"
+LABEL Status$
+LABEL MenuLine$
+LABEL TickLine$
+BUTTON "Run tests", RunTests, DEFAULT
+BUTTON "Error", MakeError
+BUTTON "Quit", Finish, KEY STOP
+MENU "Probe"
+    ITEM "Count", CountIt
+END MENU
+TIMER Tick, EVERY 1
+
+' Nested calls through several banks; parameters and locals survive them.
+FUNCTION Inner(V AS INTEGER) AS INTEGER
+    LOCAL T AS INTEGER
+    T = V * 10 + 1
+    RETURN T
+END FUNCTION
+
+FUNCTION Middle(V AS INTEGER) AS INTEGER
+    LOCAL Keep AS INTEGER
+    Keep = V
+    RETURN Inner(Keep) * 10 + Keep + 1
+END FUNCTION
+
+FUNCTION Outer(V AS INTEGER) AS INTEGER
+    LOCAL Before AS INTEGER
+    Before = V + 1
+    RETURN Middle(Before) * 10 + Before - 1
+END FUNCTION
+
+FUNCTION Area(W AS REAL, H AS REAL) AS REAL
+    RETURN W * H / 2
+END FUNCTION
+
+SUB Report(Got$, Want$)
+    MESSAGE Got$ + " [" + Want$ + "]"
+END SUB
+
+SUB FileTest
+    LOCAL Line$ AS STRING
+    LOCAL Code AS INTEGER
+    KILL "BANKPRB.TMP"
+    OPEN "BANKPRB.TMP" FOR OUTPUT AS #1
+    PRINT #1, "hello"
+    PRINT #1, 42
+    CLOSE #1
+    Code = IOERR
+    OPEN "BANKPRB.TMP" FOR INPUT AS #1
+    LINE INPUT #1, Line$
+    Status$ = Line$
+    LINE INPUT #1, Line$
+    Status$ = Status$ + " " + Line$
+    CLOSE #1
+    Code = Code + IOERR
+    KILL "BANKPRB.TMP"
+    Code = Code + IOERR
+    CALL Report("B3 file: " + Status$ + " IOERR=" + STR$(Code), "hello 42 IOERR=0")
+END SUB
+
+SUB RunTests
+    Status$ = "Running"
+    CALL Report("B1 nested: " + STR$(Outer(2)), "3142")
+    CALL Report("B2 REAL: " + STR$(Area(2.5, 3.0)), "3.75")
+    CALL FileTest
+    Status$ = "Tests done"
+END SUB
+
+SUB CountIt
+    Count = Count + 1
+    MenuLine$ = "Menu " + STR$(Count)
+END SUB
+
+SUB Tick
+    Ticks = Ticks + 1
+    TickLine$ = "Ticks " + STR$(Ticks)
+END SUB
+
+SUB MakeError
+    Probe = 4
+    Small(Probe) = 1
+END SUB
+
+SUB Finish
+    EXIT
+END SUB
+
+Status$ = "Ready"
+MenuLine$ = "Menu 0"
+TickLine$ = "Ticks 0"
+TIMER ON
+END

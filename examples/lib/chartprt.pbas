@@ -1,0 +1,63 @@
+' chartprt.pbas: the bar chart of lib/chart.pbas on a printed
+' page (LANGUAGE-SPEC §5.13). INCLUDE "lib/chart.pbas" first, then this.
+'
+'   SUB ChartPrintBars(X, Y, W, H)   in points, on the open page (PAGE NEW):
+'                                    the scale, the bars, their values and
+'                                    labels, as ChartBars draws them
+' The labels and values are printed in the page's current font (8 or 10
+' points suit a chart). A line chart is not offered: a printed line is
+' horizontal or vertical only (Rosanne's meta-file has no sloped line).
+' Names: everything here starts with ChartPrint.
+
+SUB ChartPrintBars(X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    LOCAL I AS INTEGER
+    LOCAL Max AS INTEGER
+    LOCAL PX AS INTEGER
+    LOCAL PH AS INTEGER
+    LOCAL Base AS INTEGER
+    LOCAL Slot AS INTEGER
+    LOCAL BW AS INTEGER
+    LOCAL BH AS INTEGER
+    LOCAL BX AS INTEGER
+    LOCAL T AS INTEGER
+    LOCAL V$ AS STRING
+    Max = 0
+    FOR I = 1 TO ChartN
+        Max = MAX(Max, ChartV(I))
+    NEXT I
+    ChartTop = ChartNiceTop(Max)
+    IF ChartTop >= 10 THEN
+        ChartDiv = 5
+    ELSE
+        ChartDiv = ChartTop
+    END IF
+    PX = X + 40
+    PH = H - 40
+    Base = Y + 12 + PH
+    Slot = (W - 40) / MAX(ChartN, 1)
+    BW = MAX(Slot * 2 / 3, 1)
+    FOR I = 0 TO ChartDiv
+        T = Base - ChartScale(ChartTop / ChartDiv * I, PH)
+        PAGE LINE PX - 4, T, PX + W - 40, T
+        V$ = STR$(ChartTop / ChartDiv * I)
+        PAGE TEXT PX - 6 - PAGEWIDTH(V$), T - 5, V$
+    NEXT I
+    PAGE LINE PX, Base - PH, PX, Base, 2
+    FOR I = 1 TO ChartN
+        BH = ChartScale(ChartV(I), PH)
+        BX = PX + (I - 1) * Slot + (Slot - BW) / 2
+        IF BH > 0 THEN
+            PAGE FILL BX, Base - BH, BW, BH
+        END IF
+        V$ = STR$(ChartV(I))
+        PAGE TEXT BX + (BW - PAGEWIDTH(V$)) / 2, Base - BH - 12, V$
+        V$ = ChartL$(I)
+        IF PAGEWIDTH(V$) > Slot - 2 THEN
+            WHILE LEN(V$) > 1 AND PAGEWIDTH(V$ + ".") > Slot - 2
+                V$ = LEFT$(V$, LEN(V$) - 1)
+            WEND
+            V$ = V$ + "."
+        END IF
+        PAGE TEXT PX + (I - 1) * Slot + (Slot - PAGEWIDTH(V$)) / 2, Base + 6, V$
+    NEXT I
+END SUB

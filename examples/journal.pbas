@@ -1,0 +1,281 @@
+' Journal (M7 example): a diary of one-line entries in JOURNAL.TXT.
+' Entries are never all held in memory: Prev/Next read the file up to the
+' entry wanted, Find reads on from the current entry, and Add/Delete copy
+' the file line by line into JOURNAL.TMP (with the new entry, or without
+' the deleted one) and then replace JOURNAL.TXT. Rosanne cannot append to a
+' floppy file, so copying is the only way to extend it. A copy stops at the
+' first read or write problem and leaves JOURNAL.TXT as it was.
+' Uses: FUNCTION/SUB parameters, LOCAL, REAL, INSTR/UCASE$/MID$, EOF,
+' OPEN/PRINT #/LINE INPUT #/CLOSE/KILL/NAME, IOERR, ASK.
+' Files: reads and REPLACES JOURNAL.TXT and JOURNAL.TMP in its folder.
+' Each entry is at most 63 characters (the default string capacity); the
+' word total is a REAL, so it cannot wrap. Status texts fit a LABEL (24).
+DIM Count AS INTEGER
+DIM Current AS INTEGER
+DIM Words AS REAL
+DIM Answer AS INTEGER
+DIM Line$ AS STRING
+DIM Status$ AS STRING
+DIM Where$ AS STRING
+WINDOW "Journal", LARGE
+TEXTBOX Text$, "Entry (type a new one, then Add)"
+TEXTBOX Find$, "Find"
+LABEL Where$
+LABEL Status$
+BUTTON "Add", AddEntry, DEFAULT
+BUTTON "Find", FindNext
+BUTTON "Prev", PrevEntry
+BUTTON "Next", NextEntry
+BUTTON "Delete", DeleteEntry
+BUTTON "Quit", Finish, KEY STOP
+
+' The number of words (runs of characters other than spaces) in T$.
+FUNCTION WordCount(T$) AS INTEGER
+    LOCAL I AS INTEGER
+    LOCAL N AS INTEGER
+    LOCAL InWord AS BOOLEAN
+    FOR I = 1 TO LEN(T$)
+        IF MID$(T$, I, 1) = " " THEN
+            InWord = FALSE
+        ELSE
+            IF NOT InWord THEN
+                N = N + 1
+            END IF
+            InWord = TRUE
+        END IF
+    NEXT I
+    RETURN N
+END FUNCTION
+
+FUNCTION Problem$(Code AS INTEGER) AS STRING
+    SELECT CASE Code
+    CASE 2
+        RETURN "no file yet"
+    CASE 163
+        RETURN "disk full"
+    CASE 19
+        RETURN "write protect"
+    CASE 243
+        RETURN "line too long"
+    CASE ELSE
+        RETURN "disk error " + STR$(Code)
+    END SELECT
+END FUNCTION
+
+SUB ShowWhere
+    IF Current = 0 THEN
+        Where$ = STR$(Count) + " entries"
+    ELSE
+        Where$ = "Entry " + STR$(Current) + " of " + STR$(Count)
+    END IF
+END SUB
+
+' Count the entries and words in the file.
+SUB Survey
+    Count = 0
+    Words = 0
+    OPEN "JOURNAL.TXT" FOR INPUT AS #1
+    IF IOERR = 2 THEN
+        Status$ = "New journal"
+        EXIT SUB
+    END IF
+    IF IOERR <> 0 THEN
+        Status$ = Problem$(IOERR)
+        EXIT SUB
+    END IF
+    WHILE NOT EOF(1)
+        LINE INPUT #1, Line$
+        IF IOERR <> 0 THEN
+            Status$ = Problem$(IOERR) + " at " + STR$(Count + 1)
+            CLOSE #1
+            EXIT SUB
+        END IF
+        Count = Count + 1
+        Words = Words + WordCount(Line$)
+    WEND
+    CLOSE #1
+    Status$ = STR$(Words) + " words in all"
+END SUB
+
+' Read entry N (1..Count) into Line$; FALSE if it could not be read.
+FUNCTION ReadEntry(N AS INTEGER) AS BOOLEAN
+    LOCAL K AS INTEGER
+    OPEN "JOURNAL.TXT" FOR INPUT AS #1
+    IF IOERR <> 0 THEN
+        Status$ = Problem$(IOERR)
+        RETURN FALSE
+    END IF
+    FOR K = 1 TO N
+        LINE INPUT #1, Line$
+        IF IOERR <> 0 THEN
+            Status$ = Problem$(IOERR)
+            CLOSE #1
+            RETURN FALSE
+        END IF
+    NEXT K
+    CLOSE #1
+    RETURN TRUE
+END FUNCTION
+
+SUB Show(N AS INTEGER)
+    IF ReadEntry(N) THEN
+        Current = N
+        Text$ = Line$
+        Status$ = STR$(WordCount(Line$)) + " words"
+    END IF
+    CALL ShowWhere
+END SUB
+
+' Copy the journal to JOURNAL.TMP leaving out entry Skip (0: none) and
+' adding Extra$ at the end (if not ""), then make the copy the journal.
+FUNCTION Rewrite(Skip AS INTEGER, Extra$) AS BOOLEAN
+    LOCAL K AS INTEGER
+    LOCAL Code AS INTEGER
+    OPEN "JOURNAL.TMP" FOR OUTPUT AS #2
+    Code = IOERR
+    IF Code = 0 THEN
+        OPEN "JOURNAL.TXT" FOR INPUT AS #1
+        Code = IOERR
+        IF Code = 2 THEN
+            Code = 0
+        ELSE
+            WHILE Code = 0 AND NOT EOF(1)
+                LINE INPUT #1, Line$
+                Code = IOERR
+                K = K + 1
+                IF Code = 0 AND K <> Skip THEN
+                    PRINT #2, Line$
+                    Code = IOERR
+                END IF
+            WEND
+            CLOSE #1
+        END IF
+    END IF
+    IF Code = 0 AND LEN(Extra$) > 0 THEN
+        PRINT #2, Extra$
+        Code = IOERR
+    END IF
+    CLOSE #2
+    IF Code = 0 THEN
+        Code = IOERR
+    END IF
+    IF Code <> 0 THEN
+        KILL "JOURNAL.TMP"
+        Status$ = "Unchanged: " + Problem$(Code)
+        RETURN FALSE
+    END IF
+    KILL "JOURNAL.TXT"
+    IF IOERR <> 0 AND IOERR <> 2 THEN
+        Status$ = "Kept in JOURNAL.TMP"
+        RETURN FALSE
+    END IF
+    NAME "JOURNAL.TMP" AS "JOURNAL.TXT"
+    IF IOERR <> 0 THEN
+        Status$ = "Kept in JOURNAL.TMP"
+        RETURN FALSE
+    END IF
+    RETURN TRUE
+END FUNCTION
+
+SUB AddEntry
+    IF LEN(Text$) = 0 THEN
+        Status$ = "Type an entry first"
+        EXIT SUB
+    END IF
+    IF Rewrite(0, Text$) THEN
+        Count = Count + 1
+        Words = Words + WordCount(Text$)
+        Current = 0
+        Text$ = ""
+        Status$ = "Added entry " + STR$(Count)
+    END IF
+    CALL ShowWhere
+END SUB
+
+SUB DeleteEntry
+    IF Current = 0 THEN
+        Status$ = "Show an entry first"
+        EXIT SUB
+    END IF
+    Answer = ASK("Delete entry " + STR$(Current) + "?", "Delete", "Keep")
+    IF Answer <> 1 THEN
+        EXIT SUB
+    END IF
+    IF Rewrite(Current, "") THEN
+        Status$ = "Deleted entry " + STR$(Current)
+        Current = 0
+        Text$ = ""
+        CALL Survey
+    END IF
+    CALL ShowWhere
+END SUB
+
+SUB PrevEntry
+    IF Count = 0 THEN
+        Status$ = "The journal is empty"
+    ELSE
+        IF Current <= 1 THEN
+            CALL Show(Count)
+        ELSE
+            CALL Show(Current - 1)
+        END IF
+    END IF
+END SUB
+
+SUB NextEntry
+    IF Count = 0 THEN
+        Status$ = "The journal is empty"
+    ELSE
+        IF Current >= Count THEN
+            CALL Show(1)
+        ELSE
+            CALL Show(Current + 1)
+        END IF
+    END IF
+END SUB
+
+' Show the next entry after the current one that contains Find$ (any case).
+SUB FindNext
+    LOCAL K AS INTEGER
+    LOCAL Key$ AS STRING
+    LOCAL Hit AS INTEGER
+    IF LEN(Find$) = 0 THEN
+        Status$ = "Type a word in Find"
+        EXIT SUB
+    END IF
+    Key$ = UCASE$(Find$)
+    OPEN "JOURNAL.TXT" FOR INPUT AS #1
+    IF IOERR <> 0 THEN
+        Status$ = Problem$(IOERR)
+        EXIT SUB
+    END IF
+    WHILE NOT EOF(1) AND Hit = 0
+        LINE INPUT #1, Line$
+        IF IOERR <> 0 THEN
+            Status$ = Problem$(IOERR)
+            CLOSE #1
+            EXIT SUB
+        END IF
+        K = K + 1
+        IF K > Current AND INSTR(UCASE$(Line$), Key$) > 0 THEN
+            Hit = K
+        END IF
+    WEND
+    CLOSE #1
+    IF Hit = 0 THEN
+        Status$ = "No more matches"
+        Current = 0
+        CALL ShowWhere
+    ELSE
+        CALL Show(Hit)
+        Status$ = "Found in entry " + STR$(Hit)
+    END IF
+END SUB
+
+SUB Finish
+    EXIT
+END SUB
+
+CALL Survey
+CALL ShowWhere
+END

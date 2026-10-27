@@ -1,0 +1,30 @@
+' Personal Details: textboxes read by a button handler (M3b example).
+' Town$ is set by the main line, so the window opens with it filled in;
+' Clear empties both fields by changing the bound variables.
+DIM First$ AS STRING
+DIM Town$ AS STRING
+Town$ = "Brentwood"
+WINDOW "Personal Details"
+LABEL "Type your details, then press Show"
+TEXTBOX First$, "First name"
+TEXTBOX Town$, "Home town"
+BUTTON "Show", ShowDetails
+BUTTON "Clear", ClearDetails
+BUTTON "Quit", QuitDetails
+SUB ShowDetails
+    IF First$ = "" THEN
+        MESSAGE "Please type a first name"
+    ELSE
+        MESSAGE "Hello " + First$ + " from " + Town$
+        MESSAGE "Your name has " + STR$(LEN(First$)) + " letters"
+        MESSAGE "It starts with " + LEFT$(First$, 1)
+    END IF
+END SUB
+SUB ClearDetails
+    First$ = ""
+    Town$ = ""
+END SUB
+SUB QuitDetails
+    EXIT
+END SUB
+END

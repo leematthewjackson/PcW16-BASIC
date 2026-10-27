@@ -1,0 +1,404 @@
+' CONTACTS IV (M11, development variant): CONTACTS III (examples/contacts3.pbas,
+' accepted in M10 and unchanged) rebuilt on the M11 libraries:
+'   lib/app.pbas       status line, unsaved changes, file error messages;
+'   lib/forms.pbas     the contact form's checks (as CONTACTS III);
+'   lib/listview.pbas  the list: keys, mouse, the chosen row inverted, and
+'                      aligned columns on the fixed text grid.
+' The contacts and their file are CONTACTS III's: the same TYPE, so the same
+' CONTACTS.PDB (PDB1) works with both programs. In the build folder
+' (\PCW\FOLDER01 by default) it can replace CONTACTS.PDB, CONTACTS.NEW and
+' CONTACTS.BAK: do not keep other files of those names there.
+'
+' Page: name, phone and town in columns; Up / Down / PgUp / PgDn / Home /
+' End or a click choose a row; Return edits it; Delete deletes it (after
+' asking). Buttons and menus: Add, Edit, Delete, Find (in names or towns,
+' upper / lower case alike), Show all, Sort (by name; by town, then name;
+' by number), Save (Ctrl+S), Quit (Ctrl+Q, asks about unsaved changes).
+' Status: "* " when unsaved, shown / all, the order, " found" after a find.
+' Limits: 200 contacts; name 30, phone 20, e-mail 32, town 20 characters
+' (the list shows the first 22, 15 and 12).
+' Build with --runtime-banks all (python3 tools/build.py examples/contacts4.pbas --runtime-banks all)
+INCLUDE "lib/app.pbas"
+INCLUDE "lib/forms.pbas"
+INCLUDE "lib/listview.pbas"
+
+CONST MAXN = 200
+CONST DBNAME = "CONTACTS.PDB"
+
+TYPE Contact
+    Id AS INTEGER
+    Name AS STRING * 30
+    Phone AS STRING * 20
+    Email AS STRING * 32
+    Town AS STRING * 20
+END TYPE
+
+DIM People(200) AS Contact BANKED
+DIM View(200) AS INTEGER
+DIM Count AS INTEGER
+DIM SortMode AS INTEGER
+DIM Filter AS INTEGER
+DIM LoadFailed AS BOOLEAN
+DIM Editing AS INTEGER
+DIM Info$ AS STRING * 24
+DIM FName$ AS STRING * 30
+DIM FPhone$ AS STRING * 20
+DIM FEmail$ AS STRING * 32
+DIM FTown$ AS STRING * 20
+DIM FindText$ AS STRING * 20
+DIM N AS INTEGER
+
+WINDOW Main, "CONTACTS IV", LARGE
+LABEL AppStatus$
+CANVAS 560, 208, PAINT Paint, MOUSE Mouse, KEYS Keys
+LABEL Info$
+BUTTON "Add", AddContact
+BUTTON "Edit", EditContact
+BUTTON "Delete", DeleteContact
+BUTTON "Find...", ShowFind
+BUTTON "Sort", NextSort
+BUTTON "Save", SaveAll
+
+WINDOW Editor, "Contact", LARGE
+TEXTBOX FName$, "Name"
+TEXTBOX FPhone$, "Phone"
+TEXTBOX FEmail$, "E-mail"
+TEXTBOX FTown$, "Town"
+BUTTON "OK", EditOK
+BUTTON "Cancel", EditCancel
+
+WINDOW Finder, "Find", LARGE
+TEXTBOX FindText$, "Find"
+BUTTON "In names", FindNames
+BUTTON "In towns", FindTowns
+BUTTON "Show all", ShowAll
+BUTTON "Back", BackToMain
+
+MENU "File"
+    ITEM "Save", SaveAll, KEY "S"
+    ITEM "Quit", QuitApp, KEY "Q"
+END MENU
+MENU "Contact"
+    ITEM "Add", AddContact, KEY "N"
+    ITEM "Edit", EditContact, KEY "E"
+    ITEM "Delete", DeleteContact, KEY "D"
+    ITEM "Find...", ShowFind, KEY "F"
+    ITEM "Show all", ShowAll, KEY "A"
+END MENU
+
+' ------------------------------------------------------------ the view
+' View(1..ListCount) = the contacts shown, in order: every contact, or those
+' matching the find text (Filter 1 names, 2 towns), sorted by SortMode
+' (1 name, 2 town then name, 3 number).
+SUB BuildView
+    IF Filter = 0 THEN
+        ListCount = Count
+        IF SortMode = 3 THEN
+            DB SORT People, Count, View, Id
+        ELSE
+            DB SORT People, Count, View, Name, NOCASE
+        END IF
+    ELSE
+        IF Filter = 1 THEN
+            DB SEARCH People, Count, View, ListCount, Name, FindText$, NOCASE
+        ELSE
+            DB SEARCH People, Count, View, ListCount, Town, FindText$, NOCASE
+        END IF
+        IF SortMode = 3 THEN
+            DB SORT People, ListCount, View, Id, KEEP
+        ELSE
+            DB SORT People, ListCount, View, Name, NOCASE, KEEP
+        END IF
+    END IF
+    IF SortMode = 2 THEN
+        DB SORT People, ListCount, View, Town, NOCASE, KEEP
+    END IF
+    CALL ListClamp
+END SUB
+
+' The list position of contact number Id (0 if not shown).
+FUNCTION ViewOf(Id AS INTEGER) AS INTEGER
+    LOCAL I AS INTEGER
+    LOCAL K AS INTEGER
+    K = DBFIND(People, Count, Id)
+    FOR I = 1 TO ListCount
+        IF View(I) = K THEN
+            RETURN I
+        END IF
+    NEXT I
+    RETURN 0
+END FUNCTION
+
+' Column K of list row I: name, phone, town.
+FUNCTION ListCell$(I AS INTEGER, K AS INTEGER) AS STRING
+    LOCAL J AS INTEGER
+    J = View(I)
+    SELECT CASE K
+    CASE 1
+        RETURN People(J).Name
+    CASE 2
+        RETURN People(J).Phone
+    END SELECT
+    RETURN People(J).Town
+END FUNCTION
+
+SUB ListPicked
+    Info$ = ""
+END SUB
+
+SUB ShowStatus
+    LOCAL S$ AS STRING
+    S$ = STR$(ListCount) + "/" + STR$(Count)
+    IF AppDirty THEN
+        S$ = "* " + S$
+    END IF
+    SELECT CASE SortMode
+    CASE 1
+        S$ = S$ + " name"
+    CASE 2
+        S$ = S$ + " town"
+    CASE ELSE
+        S$ = S$ + " number"
+    END SELECT
+    IF Filter > 0 THEN
+        S$ = S$ + " found"
+    END IF
+    CALL AppSay(S$)
+END SUB
+
+SUB Paint
+    CALL ListPaint
+    CALL ShowStatus
+END SUB
+
+' ------------------------------------------------------------ events
+SUB Keys
+    IF (KEYSHIFT AND 4) <> 0 THEN
+        EXIT SUB                    ' a Ctrl key belongs to the menus (KI-60)
+    END IF
+    IF ListKey() THEN
+        EXIT SUB
+    END IF
+    SELECT CASE KEYCODE
+    CASE 13
+        CALL EditContact
+    CASE 229
+        CALL DeleteContact
+    CASE 254
+        CALL QuitApp
+    END SELECT
+END SUB
+
+SUB Mouse
+    CALL ListMouse
+END SUB
+
+' ------------------------------------------------------------ editing
+SUB AddContact
+    IF Count >= MAXN THEN
+        MESSAGE "Full: " + STR$(MAXN) + " contacts"
+        EXIT SUB
+    END IF
+    Editing = 0
+    FName$ = ""
+    FPhone$ = ""
+    FEmail$ = ""
+    FTown$ = ""
+    SHOW Editor
+END SUB
+
+SUB EditContact
+    LOCAL K AS INTEGER
+    IF ListSel < 1 THEN
+        Info$ = "Choose one first"
+        EXIT SUB
+    END IF
+    K = View(ListSel)
+    Editing = People(K).Id
+    FName$ = People(K).Name
+    FPhone$ = People(K).Phone
+    FEmail$ = People(K).Email
+    FTown$ = People(K).Town
+    SHOW Editor
+END SUB
+
+SUB EditOK
+    LOCAL K AS INTEGER
+    LOCAL Id AS INTEGER
+    CALL FormStart
+    CALL FormRequire(FName$, "Name")
+    CALL FormPhone(FPhone$, "Phone")
+    CALL FormEmail(FEmail$, "E-mail")
+    IF NOT FormOK() THEN
+        MESSAGE FormError$
+        EXIT SUB
+    END IF
+    IF Editing = 0 THEN
+        DB NEW People, Count
+        IF IOERR <> 0 THEN
+            CALL AppFail("Not added", IOERR)
+            SHOW Main
+            EXIT SUB
+        END IF
+        K = Count
+    ELSE
+        K = DBFIND(People, Count, Editing)
+    END IF
+    People(K).Name = TRIM$(FName$)
+    People(K).Phone = TRIM$(FPhone$)
+    People(K).Email = TRIM$(FEmail$)
+    People(K).Town = TRIM$(FTown$)
+    Id = People(K).Id
+    CALL AppChanged
+    CALL BuildView
+    N = ViewOf(Id)
+    IF N > 0 THEN
+        ListSel = N
+    END IF
+    Info$ = "Changed"
+    CALL ListClamp
+    SHOW Main                   ' PAINT runs when the window opens
+END SUB
+
+SUB EditCancel
+    SHOW Main
+END SUB
+
+SUB DeleteContact
+    LOCAL K AS INTEGER
+    IF ListSel < 1 THEN
+        Info$ = "Choose one first"
+        EXIT SUB
+    END IF
+    K = View(ListSel)
+    IF NOT Confirm("Delete " + LEFT$(People(K).Name, 30) + "?") THEN
+        EXIT SUB
+    END IF
+    DB DELETE People, Count, K
+    CALL AppChanged
+    CALL BuildView
+    Info$ = "Deleted"
+    CALL Paint
+END SUB
+
+' ------------------------------------------------------- find and sort
+SUB ShowFind
+    SHOW Finder
+END SUB
+
+SUB BackToMain
+    SHOW Main
+END SUB
+
+SUB FindIn(Where AS INTEGER)
+    IF IsBlank(FindText$) THEN
+        Filter = 0
+    ELSE
+        Filter = Where
+    END IF
+    ListSel = 1
+    ListTop = 1
+    CALL BuildView
+    Info$ = STR$(ListCount) + " found"
+    SHOW Main                   ' PAINT runs when the window opens
+END SUB
+
+SUB FindNames
+    CALL FindIn(1)
+END SUB
+
+SUB FindTowns
+    CALL FindIn(2)
+END SUB
+
+SUB ShowAll
+    Filter = 0
+    CALL BuildView
+    Info$ = ""
+    SHOW Main                   ' PAINT runs when the window opens
+END SUB
+
+SUB NextSort
+    LOCAL Id AS INTEGER
+    Id = 0
+    IF ListSel >= 1 THEN
+        Id = People(View(ListSel)).Id
+    END IF
+    SortMode = SortMode MOD 3 + 1
+    CALL BuildView
+    IF Id > 0 THEN
+        N = ViewOf(Id)
+        IF N > 0 THEN
+            ListSel = N
+        END IF
+    END IF
+    CALL Paint
+END SUB
+
+' ------------------------------------------------------------ files
+SUB LoadAll
+    DB LOAD People, Count, DBNAME
+    N = IOERR
+    LoadFailed = FALSE
+    SELECT CASE N
+    CASE 0
+        Info$ = "Loaded"
+        IF DBRECOVERED = 1 THEN
+            MESSAGE "Recovered from CONTACTS.NEW: save it"
+            CALL AppChanged
+        END IF
+        IF DBRECOVERED = 2 THEN
+            MESSAGE "Unreadable: loaded CONTACTS.BAK: save it"
+            CALL AppChanged
+        END IF
+    CASE 2
+        Info$ = "New address book"
+    CASE ELSE
+        LoadFailed = TRUE
+        Info$ = "Not loaded"
+        CALL AppFail(DBNAME, N)
+    END SELECT
+    SortMode = 1
+    ListSel = 1
+    ListTop = 1
+    CALL BuildView
+END SUB
+
+SUB SaveAll
+    IF LoadFailed THEN
+        IF NOT Confirm("Replace unreadable file?") THEN
+            EXIT SUB
+        END IF
+        LoadFailed = FALSE
+    END IF
+    DB SAVE People, Count, DBNAME
+    N = IOERR
+    IF N = 0 THEN
+        CALL AppSaved
+        Info$ = "Saved"
+    ELSE
+        Info$ = "Not saved"
+        CALL AppFail("Not saved", N)
+    END IF
+    CALL ShowStatus
+END SUB
+
+FUNCTION AppSave() AS BOOLEAN
+    CALL SaveAll
+    RETURN NOT AppDirty
+END FUNCTION
+
+SUB QuitApp
+    IF AppMayClose() THEN
+        EXIT
+    END IF
+END SUB
+
+ListRows = 13
+ListWidth = 560
+ListCols = 3
+ListX(1) = 2
+ListX(2) = 244
+ListX(3) = 404
+CALL LoadAll
+END

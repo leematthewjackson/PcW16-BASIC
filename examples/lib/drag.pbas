@@ -1,0 +1,148 @@
+' drag.pbas: pressing, dragging and releasing the mouse on a CANVAS,
+' with rubber-band feedback. INCLUDE "lib/drag.pbas" near the top of a
+' program with a CANVAS. docs/libraries/drag.md.
+'
+' The program sets DragW, DragH to its canvas's size (once), and calls
+' DragMouse first thing in the canvas's MOUSE handler; it then reads:
+'   DragEvent  1 a press, 2 a move with the button down, 3 the release
+'              (0 after DragCancel, until the next press)
+'   DragOn     TRUE from a press to its release
+'   DragX0, DragY0   where the button went down
+'   DragX, DragY     where the pointer is now, kept inside the canvas
+'   DragDX, DragDY   DragX - DragX0, DragY - DragY0
+'   DragMoved  TRUE once the pointer has gone DragSlop (default 2) pixels or
+'              more from the press: a click is a press and release without
+'   DragEnded  TRUE on the release that ends a drag (not after DragCancel)
+'
+' Feedback is drawn in XOR ink, so drawing it again erases it; each Show
+' first erases what was shown before. They leave DRAW INK BLACK.
+'   SUB DragShowBox         the rectangle from the press to now
+'   SUB DragShowLine        a line from the press to now
+'   SUB DragShowFrame(X, Y, W, H)   any outline (e.g. an object being moved
+'                           at its new place); clipped to the canvas
+'   SUB DragHide            erase what is shown
+'   SUB DragCancel          erase it and forget the drag (the Stop key, a
+'                           tool change): the release that follows is ignored
+' Names: everything here starts with Drag.
+DIM DragW AS INTEGER
+DIM DragH AS INTEGER
+DIM DragEvent AS INTEGER
+DIM DragOn AS BOOLEAN
+DIM DragX0 AS INTEGER
+DIM DragY0 AS INTEGER
+DIM DragX AS INTEGER
+DIM DragY AS INTEGER
+DIM DragDX AS INTEGER
+DIM DragDY AS INTEGER
+DIM DragMoved AS BOOLEAN
+DIM DragEnded AS BOOLEAN
+DIM DragSlop AS INTEGER
+DIM DragIgnore AS BOOLEAN
+DIM DragFbKind AS INTEGER
+DIM DragFbX AS INTEGER
+DIM DragFbY AS INTEGER
+DIM DragFbW AS INTEGER
+DIM DragFbH AS INTEGER
+
+SUB DragMouse
+    LOCAL E AS INTEGER
+    E = MOUSEEVENT
+    DragEnded = FALSE
+    IF DragSlop <= 0 THEN
+        DragSlop = 2
+    END IF
+    DragX = MIN(MAX(MOUSEX, 0), DragW - 1)
+    DragY = MIN(MAX(MOUSEY, 0), DragH - 1)
+    IF E = 1 THEN
+        DragIgnore = FALSE
+        DragOn = TRUE
+        DragMoved = FALSE
+        DragX0 = DragX
+        DragY0 = DragY
+    END IF
+    IF DragIgnore THEN
+        DragEvent = 0
+        IF E = 3 THEN
+            DragIgnore = FALSE
+        END IF
+        EXIT SUB
+    END IF
+    DragEvent = E
+    DragDX = DragX - DragX0
+    DragDY = DragY - DragY0
+    IF ABS(DragDX) >= DragSlop OR ABS(DragDY) >= DragSlop THEN
+        DragMoved = TRUE
+    END IF
+    IF E = 3 THEN
+        DragOn = FALSE
+        DragEnded = TRUE
+    END IF
+END SUB
+
+' Draw (or, the second time, erase) the feedback remembered in DragFb*.
+SUB DragFbDraw
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL W AS INTEGER
+    LOCAL H AS INTEGER
+    IF DragFbKind = 0 THEN
+        EXIT SUB
+    END IF
+    DRAW INK XOR
+    IF DragFbKind = 2 THEN
+        DRAW LINE DragFbX, DragFbY, DragFbW, DragFbH
+    ELSE
+        X = MAX(DragFbX, 0)
+        Y = MAX(DragFbY, 0)
+        W = MIN(DragFbX + DragFbW, DragW) - X
+        H = MIN(DragFbY + DragFbH, DragH) - Y
+        IF W > 0 AND H > 0 THEN
+            DRAW BOX X, Y, W, H
+        END IF
+    END IF
+    DRAW INK BLACK
+END SUB
+
+SUB DragHide
+    CALL DragFbDraw
+    DragFbKind = 0
+END SUB
+
+SUB DragShowBox
+    CALL DragHide
+    DragFbKind = 1
+    DragFbX = MIN(DragX0, DragX)
+    DragFbY = MIN(DragY0, DragY)
+    DragFbW = ABS(DragDX) + 1
+    DragFbH = ABS(DragDY) + 1
+    CALL DragFbDraw
+END SUB
+
+SUB DragShowLine
+    CALL DragHide
+    DragFbKind = 2
+    DragFbX = DragX0
+    DragFbY = DragY0
+    DragFbW = DragX
+    DragFbH = DragY
+    CALL DragFbDraw
+END SUB
+
+SUB DragShowFrame(X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    CALL DragHide
+    DragFbKind = 3
+    DragFbX = X
+    DragFbY = Y
+    DragFbW = W
+    DragFbH = H
+    CALL DragFbDraw
+END SUB
+
+SUB DragCancel
+    CALL DragHide
+    IF DragOn THEN
+        DragIgnore = TRUE
+    END IF
+    DragOn = FALSE
+    DragEvent = 0
+END SUB

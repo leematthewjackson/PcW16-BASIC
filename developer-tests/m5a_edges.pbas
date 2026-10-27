@@ -1,0 +1,22 @@
+' M5a XAnne edge cases: assignment that reads its own destination, empty
+' and out-of-range counts, and finally the new substring runtime error.
+DIM S$ AS STRING
+DIM E$ AS STRING
+DIM N AS INTEGER
+S$ = "abc"
+S$ = "<" + S$ + ">"
+MESSAGE "1 " + S$
+S$ = S$ + S$
+MESSAGE "2 " + S$
+S$ = MID$(S$, 2, LEN(S$) - 2)
+MESSAGE "3 " + S$
+N = 0
+MESSAGE "4 [" + LEFT$(S$, N) + "][" + MID$(E$, 1, 5) + "]"
+MESSAGE "5 [" + E$ + E$ + "]"
+N = 500
+MESSAGE "6 " + RIGHT$(S$, N) + " " + STR$(LEN(MID$(S$, N, 1)))
+N = 0
+MESSAGE "7 about to fail: MID$ start " + STR$(N)
+MESSAGE MID$(S$, N, 2)
+MESSAGE "8 never shown"
+END
