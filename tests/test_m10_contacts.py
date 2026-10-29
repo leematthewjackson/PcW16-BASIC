@@ -60,7 +60,7 @@ def b(window, name):
 # M14 (KI-100): the M14 file-safety code does not fit CONTACTS III's resident-only build, so
 # the M10 application is run as the owner accepted it; its banked M14 build is run by
 # tests/test_m11_rtbank.py and test_m14_*.py cover the M14 behaviour
-AS_ACCEPTED = {"legacy_file_safety": True}
+AS_ACCEPTED = {"legacy_file_safety": True, "legacy_tasks_stop": True}
 
 
 def run(events, files=None, answers=None):

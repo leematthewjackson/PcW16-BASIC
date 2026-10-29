@@ -11,6 +11,12 @@
 
 When something goes wrong: [troubleshooting.md](troubleshooting.md).
 
+**New in 1.0.0rc2** ([../RELEASE-NOTES.md](../RELEASE-NOTES.md)): up to eight named canvases, Rosanne's
+twelve dialog fonts, scalable Swiss and Times type from 6 to 72 points, and Tasks → Stop with `ON STOP`.
+They are in [manual chapter 12](manual/12-drawing.md) and
+[chapter 11](manual/11-menus-keys-mouse.md#tasks--stop-and-on-stop), with examples in
+[../examples/README.md](../examples/README.md#m15-several-canvases-fonts-type-and-tasks--stop).
+
 ## Reference
 
 | document | what it covers |
@@ -31,7 +37,7 @@ When something goes wrong: [troubleshooting.md](troubleshooting.md).
 | [../programs/MANIFEST.md](../programs/MANIFEST.md) | prebuilt programs and pictures, with checksums |
 
 About the project: [../ROADMAP.md](../ROADMAP.md) (possible future work, no commitments),
-[../CHANGELOG.md](../CHANGELOG.md), [../CONTRIBUTING.md](../CONTRIBUTING.md),
+[../RELEASE-NOTES.md](../RELEASE-NOTES.md), [../CHANGELOG.md](../CHANGELOG.md), [../CONTRIBUTING.md](../CONTRIBUTING.md),
 [../LICENSING.md](../LICENSING.md) (GPL-3.0-or-later; the runtime, libraries and templates MIT-0),
 [../THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
 
@@ -62,6 +68,7 @@ information is for you:
 | `docs/INSTALL.md` | installation | [install.md](install.md) |
 | `docs/M13-GRAPHICS-ASSETS.md`, `docs/M12-BITMAP-FORMAT.md`, `docs/M13-SPRITES.md` | pictures, the `.PBI` format, sprites | [graphics-assets.md](graphics-assets.md), [manual/13-bitmaps-and-sprites.md](manual/13-bitmaps-and-sprites.md) |
 | `docs/M12-PRINTING.md` | printing | [manual/15-printing.md](manual/15-printing.md) |
+| `docs/M15*.md` (M15a research, M15b plan and report, M15c acceptance) | Tasks → Stop, dialog fonts, screen type, several canvases | [manual/11-menus-keys-mouse.md](manual/11-menus-keys-mouse.md#tasks--stop-and-on-stop), [manual/12-drawing.md](manual/12-drawing.md) |
 | `docs/M13-RESPONSIVENESS.md`, `docs/M11-CORRECTIVE.md` | timers, the calibrated clock, responsiveness measurements | [manual/14-timers-and-animation.md](manual/14-timers-and-animation.md) |
 | `docs/M8-*.md`, `docs/M9-*.md`, `docs/M10-ARCHITECTURE.md`, `docs/M11-ARCHITECTURE.md`, `docs/M12-ARCHITECTURE.md` | memory, banking and compiler design records | [memory.md](memory.md), [manual/16-building-and-commands.md](manual/16-building-and-commands.md) |
 | `docs/M13-PAINT2.md`, `docs/M13-DESIGNER.md`, `docs/M13-PLATFORMER.md`, `docs/M13-INDEPENDENT-APP.md` | design notes for the reference applications | [../examples/README.md](../examples/README.md) |

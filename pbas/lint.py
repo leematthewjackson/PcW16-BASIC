@@ -86,4 +86,8 @@ def warnings(program) -> list[tuple[int, int, str]]:
         out.append((getattr(var, "line", 1) or 1, getattr(var, "column", 1) or 1,
                     f"{base} is also a built-in function: {what}, not the built-in "
                     "(choose another name to use both)"))
+    if getattr(program, "on_stop", None) and not getattr(program, "menus", None):  # M15c S5 (XAnne)
+        out.append((program.on_stop_line or 1, 1,
+                    "ON STOP in a program without menus: Rosanne shows no menu bar, so Tasks > Stop "
+                    "cannot be chosen and the handler never runs (add a MENU, or end with EXIT)"))
     return out

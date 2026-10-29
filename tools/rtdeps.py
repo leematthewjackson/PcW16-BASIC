@@ -58,6 +58,12 @@ IMPLIES = {
     "WINDOWS": {"DIALOG", "POST"}, "FOCUS": {"DIALOG", "POST"}, "POST": {"BINDINGS", "DIALOG"},
     "LIST": {"CTL2", "SCROLL"}, "SLIDER": {"CTL2", "SCROLL"}, "CHOICE": {"CTL2"},
     "SCROLL": {"CTL2"}, "CHANGE": {"CTL2"}, "CTL2": {"DIALOG", "BINDINGS"},
+    # M15: DRAW FONT / ALIGN / TYPE FONT / DRAW TYPE / TYPEWIDTH / TYPEHEIGHT need a CANVAS (semantics);
+    # several canvases are canvases; ON STOP turns the binding section on (bindings_on)
+    "DWFONT": {"CANVAS", "DIALOG", "BINDINGS"}, "DWALIGN": {"DWFONT", "CANVAS", "DIALOG", "BINDINGS"},
+    "TYPO": {"CANVAS", "DIALOG", "BINDINGS"}, "CVMULTI": {"CANVAS", "DIALOG", "BINDINGS"},
+    "TYPG": {"TYPO", "PAGE", "FIO", "FILES", "CANVAS", "DIALOG", "BINDINGS"},  # generate(): TYPO and PAGE
+    "STOPNM": {"DIALOG", "BINDINGS"},
 }
 
 COND = re.compile(r"^\s*(IF|ELSE|ENDIF)\b\s*(.*?)\s*(;.*)?$")

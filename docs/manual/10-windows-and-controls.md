@@ -997,7 +997,9 @@ FOCUS Name
 ```
 
 **Meaning.** Moves the keyboard focus to the `TEXTBOX`, `NUMBERBOX` or `CHECKBOX` bound to
-`Name`, when the handler returns or when its window next opens.
+`Name`, when the handler returns or when its window next opens. `Name` may also be a named
+canvas: its KEYS handler then takes the keys without a click
+([chapter 12](12-drawing.md#several-canvases-draw-on)).
 
 **Example**
 
@@ -1021,11 +1023,10 @@ END SUB
 END
 ```
 
-**Limits.** `Name` must be bound in exactly one window. `FOCUS` cannot name a canvas, and
-whether a click on a canvas takes the focus from a text field in the same window is not known
-(known issue KI-87).
+**Limits.** `Name` must be bound in exactly one window. A click on a canvas also takes the
+keyboard from a text field in the same window (known issue KI-87).
 
-*Evidence:* tested in XAnne (`contact_card.pbas`, `order_form.pbas`).
+*Evidence:* tested in XAnne (`contact_card.pbas`, `order_form.pbas`; a canvas, M15c C3–C4).
 
 ## MESSAGE, ASK and BEEP
 

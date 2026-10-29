@@ -187,6 +187,16 @@ CLOCK_RATE = 2_000_000
 CLOCK_START = 12 * 3600 + 34 * 60 + 56
 
 
+def dialog_font_width(text: bytes, font: int) -> int:
+    """M15: a MODEL of dialog font *font*'s advances (1..12): font 7 as
+    font7_width, the others scaled from it by (font + 4) / 11. Not Rosanne's
+    fonts (XAnne, M15a T1/T2: every font draws, each with its own widths;
+    their figures were not recorded); only for exercising the runtime's
+    measuring (DRAW FONT, TEXTWIDTH, the right-edge cut, ALIGN)."""
+    width = font7_width(text)
+    return width if font == 7 else (width * (font + 4) + 5) // 11
+
+
 def font7_width(text: bytes) -> int:
     """Model of dialog font 7 advances in pixels (M5d repair).
 
@@ -249,6 +259,13 @@ TYPO_BANK = 0x84
 TYPO_INFO_AT = 0x1E00
 TYPO_FONTS = ((0x0201, 0x0F, 2, "Swiss"), (0x0101, 0x0F, 1, "Times"))
 TYPO_SIZES = (6, 8, 10, 11, 12, 14, 18, 24, 36, 72)
+# M15: os_typo_charscreen (93) draws one character of slot 0 on the screen.
+# XAnne (M15a T4): slot 0 at 10 points draws; the model's pixel is 25/1800"
+# (a reading of the T4d screenshot) and its cell is the advance wide and
+# ascender + descender high. Rosanne's y is the BASELINE (owner, XAnne, M15c
+# T2: text drawn at y = 40 stood above a rule at 40): the cell runs from y -
+# ascender to y + descender. typo_chars records the cell's top.
+FN_OS_TYPO_CHARSCREEN = 93
 
 
 def typo_width(char: int, size: int, bold: bool = False) -> int:
@@ -500,6 +517,7 @@ class CPU:
         self.alerts: list[str] = []
         self.exited = False  # set only by the os_app_exit intercept
         self.ix = 0
+        self.text_fonts: list = []  # M15: the font of each os_dialog_string, as texts
         self.iy = 0  # M7: set only by ld iy,nn
         self.mem_free: list[int] = list(MEM_POOL)  # M8: blocks os_get_mem can hand out
         self.owned: dict[int, bytearray] = {}  # M8: the program's blocks
@@ -547,6 +565,7 @@ class CPU:
         self.typo_mem = bytearray(0x4000)
         self.typo_slot: tuple | None = None
         self.typo_selected = 0
+        self.typo_chars: list = []  # M15: (x, y, char, style, mode, (id, size)) of each os_typo_charscreen
         self.meta: dict | None = None
         self.printed: list[dict] = []
         self.print_result = 0
@@ -920,6 +939,9 @@ class CPU:
         if fn in FN_TYPO or fn in FN_META:  # M12 printing
             self._print_call(fn)
             return
+        if fn == FN_OS_TYPO_CHARSCREEN:  # M15 screen typography
+            self._typo_screen()
+            return
         if fn == FN_OS_ALERT:
             # out: NC, A = button; "BC, DE, HL, IX, IY corrupt"
             self.os_log.append((fn, None))
@@ -1060,10 +1082,11 @@ class CPU:
                 if byte == 0:
                     break
                 text.append(byte)
-            if self._read24(self.c, addr) != 7:
-                raise SimError("os_dialog_string_width: the model knows font 7 only")
+            font = self._read24(self.c, addr)
+            if not 1 <= font <= 12:
+                raise SimError(f"os_dialog_string_width: font {font} is not 1..12")
             self.os_log.append((fn, bytes(text)))
-            self.set_hl(font7_width(bytes(text)))
+            self.set_hl(dialog_font_width(bytes(text), font))
             self.a = 0x07
             self.f = FLAG_C
             return
@@ -1704,7 +1727,11 @@ class CPU:
             self.os_log.append((fn, (x, y, text)))
             self.draw_log.append(("text", x, y, text, mode))
             self.texts.append((x, y, text, mode))
-            self._block(x, y, TEXT_CELL_W * len(text), TEXT_CELL_H, "black")
+            self.text_fonts.append(font)  # M15: DRAW FONT
+            width = TEXT_CELL_W * len(text)
+            if x + width > SCREEN_W:  # M15: measured text may end nearer the edge
+                width = dialog_font_width(text.encode("latin-1"), font)
+            self._block(x, y, width, TEXT_CELL_H, "black")
             self._poison("a")
             self.f &= ~FLAG_C
             return
@@ -1779,6 +1806,36 @@ class CPU:
         source = self.owned[block] if block in self.owned else self.q2_other[block]
         self.mem[0x8000:0xC000] = source
         self.q2 = block
+
+    def _typo_screen(self) -> None:
+        """M15: os_typo_charscreen: C char, B accent, DE x, HL y (pixels),
+        IX low style, high mode; A = 0 / 4 no font in slot / 5 out of range.
+        A character not wholly on the screen is a model error (Rosanne would
+        clip to its window or answer 6 / 9; the runtime must not ask)."""
+        if not self.typo_ready or self.typo_selected != 0:
+            raise SimError("os_typo_charscreen before os_typo_init / select")
+        if not self.mouse_hidden:
+            raise SimError("os_typo_charscreen with the mouse pointer shown")
+        style, mode = self.ix & 0xFF, self.ix >> 8
+        self.os_log.append((FN_OS_TYPO_CHARSCREEN, (self.de, self.hl, self.c, style, mode)))
+        if self.typo_slot is None:
+            self.a = 4
+        elif self.b != 0 or self.c < 32:
+            self.a = 5
+        else:
+            size = self.typo_slot[1]
+            w = (typo_width(self.c, size, bool(style & 1)) + 24) // 25
+            h = (size * 25 * 4 // 5 + size * 25 // 4 + 24) // 25
+            x, y = self.de, self.hl - (size * 25 * 4 // 5 + 24) // 25  # the baseline less the ascender
+            if x + w > SCREEN_W or y + h > SCREEN_H or y < 0:
+                raise SimError(f"typo character at {x},{y} ({w}x{h}) off the {SCREEN_W}x{SCREEN_H} screen")
+            if mode not in (0, 3) or style & ~3:
+                raise SimError(f"os_typo_charscreen style {style} mode {mode}: outside what the runtime uses")
+            self.typo_chars.append((x, y, chr(self.c), style, mode, self.typo_slot))
+            self.draw_log.append(("typo", x, y, chr(self.c), style, mode))
+            self._block(x, y, w, h, "black")
+            self.a = 0
+        self._poison("b", "c", "d", "e", "h", "l", "ix")
 
     def _print_call(self, fn: int) -> None:
         """M12: the typo font (83..91) and print meta-file (95..105) calls
@@ -2556,7 +2613,7 @@ class CPU:
         elif kind == "hotkey":  # from "type": ("hotkey", title, entry) as the search found it
             title, number = entry[1], entry[2]
             status = 0x80
-            if title < len(self.menu):
+            if self.menu and title < len(self.menu):  # M15: a program without menus
                 keyed = [i for i, e in enumerate(self.menu[title][1]) if e[2] != "_"]
                 if number < len(keyed):
                     st, key, text = self.menu[title][1][keyed[number]]

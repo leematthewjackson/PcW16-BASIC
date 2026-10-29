@@ -1,0 +1,22 @@
+' M15STNM: M15c acceptance for W1, step S5: ON STOP in a program WITHOUT
+' menus (docs/M15C-ACCEPTANCE.md). Open question: Rosanne may offer no
+' Tasks menu, or not send Tasks > Stop, to such a program. If Stop arrives,
+' the program writes M15STNM.TXT and ends.
+DIM Seen$ AS STRING * 40
+WINDOW "M15 Stop, no menus"
+LABEL "Try Tasks > Stop (if a Tasks menu is offered)."
+LABEL "If the program ends, M15STNM.TXT says why."
+BUTTON "Quit", Quit
+ON STOP Ending
+
+FUNCTION Ending() AS BOOLEAN
+    OPEN "M15STNM.TXT" FOR OUTPUT AS #1
+    PRINT #1, "M15STNM ended by Tasks > Stop"
+    CLOSE #1
+    RETURN TRUE
+END FUNCTION
+
+SUB Quit
+    EXIT
+END SUB
+END

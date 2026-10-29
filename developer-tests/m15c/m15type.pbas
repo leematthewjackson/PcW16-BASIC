@@ -1,0 +1,189 @@
+' M15TYPE: M15c acceptance for W3, screen typography: TYPE FONT, DRAW TYPE,
+' TYPEWIDTH, TYPEHEIGHT (docs/M15C-ACCEPTANCE.md, steps T1-T6). It opens at
+' 10 points, the size XAnne has shown (M15a T4); Larger / Smaller step through
+' the other sizes one at a time; the Type menu sets Swiss or Times, bold and
+' italic. On the canvas:
+'   - a ruled line at y = 40 with the sample drawn at y = 40, the top of
+'     its line: the text hangs below the line (r2: M15c T2 found Rosanne's y
+'     is the baseline, and the runtime now passes top + ascender);
+'   - a tall tick where TYPEWIDTH says the sample ends, and a short tick at
+'     the left where TYPEHEIGHT says the line ends;
+'   - a long line from x = 380 that must stop before the right edge.
+' The canvas's last line gives the figures. Speed times 8 lines of type
+' against 8 lines of DRAW TEXT. Print prints one page whose two lines are
+' set around screen type (slot 0 is shared).
+DIM Sizes(10) AS INTEGER
+DIM SizeK AS INTEGER
+DIM Swiss AS BOOLEAN
+DIM Bold AS BOOLEAN
+DIM Italic AS BOOLEAN
+DIM Info$ AS STRING * 90
+DIM S AS INTEGER
+DIM W AS INTEGER
+DIM H AS INTEGER
+DIM N AS INTEGER
+DIM T0 AS INTEGER
+DIM T1 AS INTEGER
+DIM T2 AS INTEGER
+WINDOW "M15 Type", LARGE
+CANVAS 560, 280, PAINT Draw
+BUTTON "Smaller", Smaller
+BUTTON "Larger", Larger
+BUTTON "Speed", Speed
+BUTTON "Print", PrintIt
+BUTTON "Quit", Quit
+MENU "File"
+    ITEM "Quit", Quit
+END MENU
+MENU "Type"
+    ITEM "Swiss (else Times)", Family, TICK Swiss
+    ITEM "Bold", ToggleBold, TICK Bold
+    ITEM "Italic", ToggleItalic, TICK Italic
+END MENU
+
+SUB SetFont
+    S = Sizes(SizeK)
+    N = 0
+    IF Bold THEN
+        N = 1
+    END IF
+    IF Italic THEN
+        N = N + 2
+    END IF
+    IF NOT Swiss THEN
+        N = N + 4
+    END IF
+    SELECT CASE N
+    CASE 0
+        TYPE FONT SWISS, S
+    CASE 1
+        TYPE FONT SWISS, S, BOLD
+    CASE 2
+        TYPE FONT SWISS, S, ITALIC
+    CASE 3
+        TYPE FONT SWISS, S, BOLD, ITALIC
+    CASE 4
+        TYPE FONT TIMES, S
+    CASE 5
+        TYPE FONT TIMES, S, BOLD
+    CASE 6
+        TYPE FONT TIMES, S, ITALIC
+    CASE ELSE
+        TYPE FONT TIMES, S, BOLD, ITALIC
+    END SELECT
+END SUB
+
+FUNCTION Style$() AS STRING
+    LOCAL R$ AS STRING
+    R$ = "Times"
+    IF Swiss THEN
+        R$ = "Swiss"
+    END IF
+    R$ = R$ + " " + STR$(Sizes(SizeK))
+    IF Bold THEN
+        R$ = R$ + " bold"
+    END IF
+    IF Italic THEN
+        R$ = R$ + " italic"
+    END IF
+    RETURN R$
+END FUNCTION
+
+SUB Draw
+    DRAW CLEAR
+    CALL SetFont
+    DRAW LINE 0, 40, 559, 40
+    DRAW TYPE 10, 40, "Ag Typography 123"
+    W = TYPEWIDTH("Ag Typography 123")
+    H = TYPEHEIGHT
+    IF 10 + W <= 559 THEN
+        DRAW LINE 10 + W, 26, 10 + W, 40 + H + 8
+    END IF
+    DRAW LINE 0, 40 + H, 6, 40 + H
+    DRAW TYPE 380, 150, "Cut here: WWWWWWWWWWWWWWWWWW"
+    Info$ = Style$() + ": TYPEWIDTH " + STR$(W) + ", TYPEHEIGHT " + STR$(H)
+    CALL ShowInfo
+END SUB
+
+SUB ShowInfo
+    DRAW FILL 0, 262, 560, 18, 8
+    DRAW TEXT 4, 262, Info$
+END SUB
+
+SUB Smaller
+    IF SizeK > 1 THEN
+        SizeK = SizeK - 1
+    END IF
+    CALL Draw
+END SUB
+
+SUB Larger
+    IF SizeK < 10 THEN
+        SizeK = SizeK + 1
+    END IF
+    CALL Draw
+END SUB
+
+SUB Family
+    Swiss = NOT Swiss
+    CALL Draw
+END SUB
+
+SUB ToggleBold
+    Bold = NOT Bold
+    CALL Draw
+END SUB
+
+SUB ToggleItalic
+    Italic = NOT Italic
+    CALL Draw
+END SUB
+
+SUB Speed
+    DRAW CLEAR
+    TYPE FONT SWISS, 10
+    T0 = CLOCKTICKS
+    FOR N = 0 TO 7
+        DRAW TYPE 4, 4 + N * 14, "Thirty-two characters of type.."
+    NEXT N
+    T1 = CLOCKTICKS
+    FOR N = 0 TO 7
+        DRAW TEXT 4, 126 + N * 16, "Thirty-two characters of text.."
+    NEXT N
+    T2 = CLOCKTICKS
+    Info$ = "8 lines at 10 pt: type " + STR$((T1 - T0 + 960) MOD 960) + "/16 s, DRAW TEXT "
+    Info$ = Info$ + STR$((T2 - T1 + 960) MOD 960) + "/16 s"
+    CALL ShowInfo
+END SUB
+
+SUB PrintIt
+    PAGE NEW
+    PAGE FONT 18, BOLD
+    PAGE TEXT 0, 0, "M15TYPE: printed after screen type"
+    CALL Draw
+    PAGE FONT 10
+    PAGE TEXT 0, 40, "and this line after more screen type, at 10 points"
+    PAGE PRINT
+    N = IOERR
+    CALL Draw
+    Info$ = "Print: IOERR " + STR$(N) + " (0 = printed); " + Info$
+    CALL ShowInfo
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+
+Sizes(1) = 6
+Sizes(2) = 8
+Sizes(3) = 10
+Sizes(4) = 11
+Sizes(5) = 12
+Sizes(6) = 14
+Sizes(7) = 18
+Sizes(8) = 24
+Sizes(9) = 36
+Sizes(10) = 72
+SizeK = 3
+Swiss = TRUE
+END

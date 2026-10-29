@@ -251,7 +251,8 @@ V = NoArgs()                 ' a call always needs ()
 | `EOF(c)`, `IOERR` | BOOLEAN, INTEGER | only in a program with OPEN, KILL or NAME (IOERR also after TEXT, DB, BITMAP and PAGE statements) |
 | `TEXTLINES(D)`, `TEXTLEN(D, n)`, `TEXTGET$(D, n, col, count)`, `TEXTFIND(D, s$, n, col)`, `TEXTCOL(D)`, `TEXTCHANGED(D)`, `TEXTFREE(D)`, `TEXTSIZE(D)`, `TEXTSAME(A, B)` | | TEXT buffers (2.12) |
 | `DBFIND(A, Count, id)`, `DBNEXTID(A)`, `DBRECOVERED` | INTEGER | databases (2.12) |
-| `TEXTWIDTH(s$)` | INTEGER | pixels in the canvas font; no canvas needed |
+| `TEXTWIDTH(s$)` | INTEGER | pixels in the current `DRAW FONT` (font 7 unless chosen); no canvas needed |
+| `TYPEWIDTH(s$)`, `TYPEHEIGHT` | INTEGER | pixels of `DRAW TYPE` text in the current `TYPE FONT` (width; line height); need a CANVAS |
 | `SECONDS` | INTEGER 0..3599 | minutes × 60 + seconds of the clock |
 | `CLOCKTICKS` | INTEGER 0..959 | sixteenths of a second within the minute |
 | `MOUSEX`, `MOUSEY`, `MOUSEEVENT`, `KEYCODE`, `KEYSHIFT` | INTEGER | only in a program with a CANVAS |
@@ -306,8 +307,8 @@ the budget: they sit in rows at y = 180 and 208 (LARGE: 340 and 368).
 | `LIST Sel, Items$, Count [, ROWS r] [, CHANGE H] [, ACTION H2]` | items an ordinary STRING array (not BANKED), so the whole array, each element at its full capacity, plus 3 bytes an element for the list's item table, is in the resident 16K block (section 8); for many rows use `lib/listview.pbas` on a CANVAS with a BANKED array (section 4); r 2..12; Sel 0..Count; **each shown item ≤ 24 printable ASCII characters**; `ACTION` (double-click) never runs in XAnne (known issue KI-25, [docs/limitations.md](limitations.md)): give the action a button |
 | `CHOICE Sel, Items$, Count [, "caption"] [, CHANGE H]` | a drop-down; Sel must be 1..Count whenever it is shown, so set it before the window opens |
 | `SLIDER V, MIN lo, MAX hi [, "caption"] [, CHANGE H]` | horizontal; 1 ≤ hi − lo ≤ 250; ≤ 16 per program; an arrow click can step more than once (known issue KI-2, [docs/limitations.md](limitations.md)) |
-| `CANVAS w, h [, PAINT P] [, MOUSE M] [, KEYS K]` | one per program; w 16..568, h 16..300; a normal window holds w ≤ 330, LARGE ≤ 568; the window's layout must also fit its height |
-| `FOCUS V` | moves the keyboard focus to V's TEXTBOX, NUMBERBOX or CHECKBOX when the handler returns |
+| `CANVAS [Name,] w, h [, PAINT P] [, MOUSE M] [, KEYS K]` | up to 8 per program, in any windows; with more than one, each needs a Name; w 16..568, h 16..300; a normal window holds w ≤ 330, LARGE ≤ 568; each canvas is a row (h + 8 px), so the window's layout must fit them all |
+| `FOCUS V` | moves the keyboard focus to V's TEXTBOX, NUMBERBOX or CHECKBOX when the handler returns; `FOCUS Name` with a canvas's Name gives that canvas the keyboard |
 
 TEXTBOX, CHECKBOX, LABEL, RADIO, NUMBERBOX, LIST, SLIDER and TICK declare their
 variable if no DIM did. A variable may be bound to one control per window.
@@ -341,6 +342,27 @@ TIMER ON                                     ' one TIMER per program; needs a WI
   `SC_` names in `lib/keys.pbas` (`SC_LEFT`, `SC_SPACE`, …), never numbers.
   A tap between two timer events can be missed: take taps from KEYS too.
 - A timer's handler runs are **not** a count of time (section 9).
+- **Several canvases:** a press goes to the canvas under the pointer and gives
+  it the keyboard; the drag and the release go to the canvas that was pressed;
+  keys go to the canvas with the keyboard (the last pressed, or the one
+  `FOCUS Name` chose, else the window's first). `MOUSEX`, `MOUSEY`, `KEYCODE`
+  are for the canvas whose handler runs. *Tested in XAnne.*
+- **Tasks → Stop:** a program with menus ends when Rosanne's Tasks → Stop is
+  chosen, as on `EXIT`. To protect unsaved work, declare at the top level
+  `ON STOP Handler`, where Handler is a `FUNCTION Handler() AS BOOLEAN` with
+  no parameters: TRUE ends the program, FALSE keeps it running. It may use
+  `ASK` and save files. `ON STOP AppMayClose` (lib/app.pbas) asks Save /
+  Discard / Cancel. A program **without menus** shows no menu bar, so Stop
+  never reaches it (the compiler warns). *Tested in XAnne.*
+
+```basic
+INCLUDE "lib/app.pbas"          ' AppDirty, AppMayClose; your program defines AppSave
+...
+MENU "File"
+    ITEM "Quit", Quit
+END MENU
+ON STOP AppMayClose             ' Tasks > Stop asks before discarding changes
+```
 
 ### 2.10 Drawing on the canvas
 
@@ -355,16 +377,41 @@ DRAW INVERT x, y, w, h
 DRAW BOX x, y, w, h                ' 1-pixel outline
 DRAW LINE x1, y1, x2, y2
 DRAW PIXEL x, y
-DRAW TEXT x, y, s$                 ' font 7, top-left at x, y; a 16 px line must fit below y
+DRAW TEXT x, y, s$                 ' dialog font (7 unless DRAW FONT), top-left at x, y; a 16 px line must fit below y
+DRAW TEXT x, y, s$ ALIGN CENTRE    ' or LEFT, RIGHT: placed about x (no comma before ALIGN; no cell width)
+DRAW FONT n                        ' n 1..12: Rosanne's dialog fonts, for later DRAW TEXT and TEXTWIDTH
+TYPE FONT SWISS, 18 [, BOLD] [, ITALIC]   ' or TIMES; size 6, 8, 10, 11, 12, 14, 18, 24, 36 or 72
+DRAW TYPE x, y, s$                 ' scalable type in that font, top-left at x, y; TYPEHEIGHT must fit below y
+DRAW ON Name                       ' later drawing goes to canvas Name (several canvases)
 DRAW SCROLL x, y, w, h, dx, dy     ' |dx| < w, |dy| < h
-DRAW INK BLACK | WHITE | XOR       ' for LINE, PIXEL, BOX (and TEXT with XOR)
+DRAW INK BLACK | WHITE | XOR       ' for LINE, PIXEL, BOX (and TEXT, TYPE with XOR)
 ```
 
-`DRAW TEXT` shows at most (canvas width − x) \ 11 characters a call, so text
-can stop short of the edge (known issue KI-76, [docs/limitations.md](limitations.md)); draw long text in
-pieces measured with `TEXTWIDTH`. `DRAW TEXT x, y, s$, cell` exists but is
-letter-spaced and not recommended. There are no circles, arcs, flood fill,
-colour, clipping or other fonts. All forms are *Tested in XAnne*.
+**Text.** Font 7 is the dialogs' own font and the default. `DRAW FONT n`
+chooses one of twelve for `DRAW TEXT` and `TEXTWIDTH` (fonts 11 and 12 have
+unusual glyphs); there are no styles and no line-height function, so leave a
+generous line (about 20 px for small fonts, more for 11 and 12). In a program
+without `DRAW FONT`, `DRAW TEXT` shows at most (canvas width − x) \ 11
+characters a call (known issue KI-76); with `DRAW FONT` (even `DRAW FONT 7`)
+the text is measured and cut at the last whole character before the edge.
+`DRAW TEXT x, y, s$, cell` exists but is letter-spaced and not recommended.
+
+**Scalable type.** `TYPE FONT` chooses Swiss or Times (the fonts printing
+uses), a size and bold / italic; without one, Times 10 is used. `DRAW TYPE`
+draws with the line's top-left at x, y, cut before the right edge;
+`TYPEWIDTH(s$)` and `TYPEHEIGHT` measure it in pixels. Type and `PAGE`
+printing may be mixed in any order.
+
+**Several canvases.** Declare each with a name: `CANVAS Board, 400, 200,
+PAINT BoardPaint, MOUSE BoardMouse`. A canvas's own handlers draw on it;
+other code draws on the `DRAW ON` target (the first canvas until changed).
+Each canvas keeps its own `DRAW FONT` and `TYPE FONT`. Opening a window, or
+an alert, runs every PAINT of the window again. **The runtime does not keep
+drawings**: PAINT must redraw what the program wants to keep (store it in
+arrays, as `examples/sketchpad.pbas` does).
+
+There are no circles, arcs, flood fill, colour or clipping. All forms are
+*Tested in XAnne* (Rosanne 1.12); the speed of `DRAW TYPE` is not measured.
 
 ### 2.11 Bitmaps
 
@@ -523,10 +570,12 @@ What happens when it runs:
 
    While a handler runs, the screen does not follow the variables. Typing into a
    field changes nothing until the next handler.
-5. **The program ends** with `EXIT` (from any handler or procedure). When the
-   system ends it (Tasks → Exit), no BASIC code runs and edits since the last
-   handler are lost; an "unsaved changes" question can only run from your own
-   Quit button or menu item.
+5. **The program ends** with `EXIT` (from any handler or procedure). Since M15
+   a program with menus also ends on Rosanne's Tasks → Stop. Declare
+   `ON STOP Handler` (a `FUNCTION Handler() AS BOOLEAN`) to run your own code
+   first: TRUE ends the program, FALSE keeps it running. `ON STOP AppMayClose`
+   (lib/app.pbas) asks about unsaved changes. Without `ON STOP`, edits since the
+   last handler are lost.
 
 A minimal application, *Tested in XAnne* in this form (it is the first
 tutorial's shape):
@@ -1150,9 +1199,10 @@ These are faults of the current compiler and tools, with the way round each.
 | LIST `ACTION` | never runs in XAnne: a double-click arrives as two clicks (known issue KI-25, [docs/limitations.md](limitations.md)) | a button for the action |
 | NUMBERBOX `SPIN`, SLIDER arrows | one click can step more than once (known issues KI-1 and KI-2, [docs/limitations.md](limitations.md)) | do not rely on exact single steps |
 | `PAGE FILL`, printed charts | corrected but not retested in XAnne (known issue KI-79, [docs/limitations.md](limitations.md)) | say so if your program prints filled boxes |
-| `DRAW TEXT` length | cut at (width − x) \ 11 characters (known issue KI-76, [docs/limitations.md](limitations.md)) | draw long text in pieces |
-| Return in a TEXTBOX, `KEY STOP`, `KEY HELP` | not tested (known issue KI-6, [docs/limitations.md](limitations.md)) | do not depend on them; give every action a click |
-| keyboard focus between a TEXTBOX and a canvas | not established; single-letter canvas keys may go into a text field (known issue KI-87, [docs/limitations.md](limitations.md)) | avoid letter keys on a canvas in a window with a TEXTBOX, or use Ctrl shortcuts in a menu |
+| `DRAW TEXT` length | without `DRAW FONT`, cut at (width − x) \ 11 characters (known issue KI-76, [docs/limitations.md](limitations.md)) | add `DRAW FONT 7` (measured cut), or draw long text in pieces |
+| Return in a TEXTBOX, `KEY HELP` | not tested (known issue KI-6, [docs/limitations.md](limitations.md)); XAnne's Esc is the Stop key and works a `KEY STOP` button | do not depend on them; give every action a click |
+| Tasks → Stop without menus | Rosanne offers no Tasks → Stop to a program without menus (known issue KI-108) | give an application with unsaved work a menu and `ON STOP` |
+| dialog font line heights | not known; there is no `TEXTHEIGHT` (known issue KI-106) | leave generous line spacing |
 | `RND`, `RANDOMIZE` | *Simulator only* | test games in XAnne |
 | M14 runtime corrections | `DB SAVE`/`BITMAP SAVE` refusing another file's companions (IOERR 253), `DB LOAD`'s narrower fallback, REAL `+`/`-` rounding: *Simulator only* | say so if your program depends on them |
 
@@ -1429,8 +1479,8 @@ Points to notice:
   built-ins (`EOF`), not the program's own FUNCTIONs.
 - Five buttons fit in a LARGE window in two rows; the menu gives Ctrl+S,
   Ctrl+R and Ctrl+Q.
-- When the system closes the program (Tasks → Exit), unsaved notes are lost:
-  the question runs only from Quit.
+- Rosanne's Tasks → Stop ends the program without asking (it has menus and no
+  `ON STOP`); add `ON STOP` with a FUNCTION like Quit's question to ask first.
 
 ---
 
@@ -1444,7 +1494,11 @@ Points to notice:
 - [ ] Every dynamic LABEL and LIST string is `STRING * 24` or shorter, and
       only printable ASCII can reach it.
 - [ ] Nothing is drawn from the main line; PAINT can redraw everything;
-      every coordinate is kept inside the canvas.
+      every coordinate is kept inside the canvas. With several canvases,
+      each PAINT redraws its own canvas, and code outside the handlers
+      chooses one with `DRAW ON` first.
+- [ ] A program with menus and unsaved work declares `ON STOP`, so that
+      Tasks → Stop asks first.
 - [ ] Animation is stepped by `CLOCKTICKS` (`lib/pace.pbas`), not by counting
       timer events.
 - [ ] Library dependencies are included first; your program defines what a

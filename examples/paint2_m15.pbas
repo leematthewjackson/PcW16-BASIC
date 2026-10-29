@@ -1,0 +1,965 @@
+' PAINT II (M13 Stage F): a black-and-white drawing program for the PcW16
+' with an icon palette, pattern swatches and a selection that moves.
+'
+' The palette along the top: six tools, drawn from P2ICONS.PBI (made from
+' examples/assets/paint2-icons.png with tools/pbimage.py), then nine
+' swatches, the shades 0 (black) .. 8 (white). Click one to choose it.
+'   Pencil (P)   freehand; it draws white when the white swatch is chosen
+'   Line (L)     press at one end, release at the other
+'   Box (B)      a rectangle outline, corner to corner
+'   Filled (F)   a rectangle filled with the chosen shade
+'   Eraser (E)   rub out to white, 8 x 8 pixels at a time
+'   Select (S)   drag a rectangle; then drag inside it to move what it holds
+'                (an outline follows the pointer and the selection moves
+'                there when you let go; it "floats" over the picture until
+'                you click outside it or choose another tool), or nudge it a
+'                pixel at a time with the cursor keys; Delete rubs it out
+' Edit: Undo (Ctrl+Z) / Redo (Ctrl+Y) one step (Undo while a selection
+' floats puts it back where it was, and Redo moves it again); Cut, Copy, Paste (a pasted copy floats
+' at the top left, ready to drag); Clear makes the picture white.
+' File: New, Open, Save (the old file kept as NAME.BAK), Save as, Import (a
+' PBI1 picture brought in as a floating selection), Quit. New, Open and Quit
+' ask about unsaved changes. Pictures are PBI1 files of up to 544 x 240
+' pixels, the same as PAINT's (docs/M12-BITMAP-FORMAT.md); a smaller one
+' opens at the top left. tools/pbimage.py turns a PNG into one and back.
+' The program writes only the files you name (and their .NEW / .BAK copies).
+' Without P2ICONS.PBI it still works: the tools show as letters.
+'
+' How it works: the screen is the picture while you draw. A finished change
+' is captured (BITMAP GET) into Pic1 or Pic2 in turn; the other holds the
+' picture before the change, for Undo (as in PAINT). A floating selection
+' is kept in Float, and the picture under it in Pic1 or Pic2 (Bg): moving
+' it puts back that part of the picture (BITMAP PUT of a part) and draws
+' Float at its new place. While it is dragged only an XOR outline (the
+' "ghost") follows the pointer, as in DESIGNER: moving the pixels on every
+' mouse movement put back and redrew the whole selection each time, which
+' lagged and flickered (owner, XAnne, M13); the move is made once, on the
+' release, to the same place. docs/M13-PAINT2.md.
+' The status line (tool, shade, file name, * when changed) is at the top right.
+' Build with --runtime-banks all (python3 tools/build.py examples/paint2_m15.pbas --runtime-banks all)
+' M15 version of examples/paint2.pbas: ON STOP AppMayClose, so Rosanne's Tasks > Stop
+' (which since M15 ends a program with menus) first asks about unsaved changes, as
+' Quit does; Cancel keeps the program open (LANGUAGE-SPEC 6.1, KI-35). Otherwise the same.
+INCLUDE "lib/app.pbas"
+INCLUDE "lib/geom.pbas"
+INCLUDE "lib/toolbar.pbas"
+INCLUDE "lib/keys.pbas"
+
+CONST CW = 544
+CONST CH = 240
+CONST TOP = 30
+CONST PENCIL = 1
+CONST LINETOOL = 2
+CONST BOXTOOL = 3
+CONST FILLTOOL = 4
+CONST ERASER = 5
+CONST SELECTOR = 6
+
+DIM Pic1 AS BITMAP * 544, 240
+DIM Pic2 AS BITMAP * 544, 240
+DIM Float AS BITMAP * 544, 240
+DIM Board AS BITMAP * 544, 240
+DIM Icons AS BITMAP * 24, 144
+DIM IconsOk AS BOOLEAN
+DIM Cur AS INTEGER
+DIM Bg AS INTEGER
+DIM CanUndo AS BOOLEAN
+DIM CanRedo AS BOOLEAN
+DIM HasBoard AS BOOLEAN
+DIM Tool AS INTEGER
+DIM Shade AS INTEGER
+DIM Down AS BOOLEAN
+DIM Moving AS BOOLEAN
+DIM X0 AS INTEGER
+DIM Y0 AS INTEGER
+DIM PX AS INTEGER
+DIM PY AS INTEGER
+DIM GX AS INTEGER
+DIM GY AS INTEGER
+DIM SelOn AS BOOLEAN
+DIM Floating AS BOOLEAN
+DIM SX AS INTEGER
+DIM SY AS INTEGER
+DIM SW AS INTEGER
+DIM SH AS INTEGER
+DIM GhOn AS BOOLEAN
+DIM GhX AS INTEGER
+DIM GhY AS INTEGER
+DIM InFiles AS BOOLEAN
+DIM Painted AS BOOLEAN
+DIM DocName$ AS STRING * 12
+DIM FileName$ AS STRING * 12
+DIM Target$ AS STRING * 12
+
+WINDOW Main, "PAINT II", LARGE
+CANVAS 544, 270, PAINT Paint, MOUSE Mouse, KEYS Keys
+BUTTON "Undo", UndoStep
+BUTTON "Files", ShowFiles
+BUTTON "Quit", Quit
+
+WINDOW Files, "Files", LARGE
+TEXTBOX FileName$, "Picture file (8.3, e.g. ART.PBI)"
+BUTTON "Open", OpenPic
+BUTTON "Save as", SaveAs
+BUTTON "Import", ImportPic
+BUTTON "Back", BackToMain
+
+MENU "File"
+    ITEM "New", NewPic, KEY "N"
+    ITEM "Open...", ShowFiles, KEY "O"
+    ITEM "Save", SavePic, KEY "S"
+    ITEM "Save as...", ShowFiles
+    ITEM "Import...", ShowFiles
+    ITEM "-"
+    ITEM "Quit", Quit, KEY "Q"
+END MENU
+MENU "Edit"
+    ITEM "Undo", UndoStep, KEY "Z"
+    ITEM "Redo", RedoStep, KEY "Y"
+    ITEM "-"
+    ITEM "Cut", CutSel, KEY "X"
+    ITEM "Copy", CopySel, KEY "C"
+    ITEM "Paste", PasteBoard, KEY "V"
+    ITEM "Delete", DeleteSel
+    ITEM "-"
+    ITEM "Clear", ClearPic
+END MENU
+ON STOP AppMayClose  ' M15: Rosanne's Tasks > Stop asks about unsaved changes first
+
+' ---------------------------------------------------------------- status
+
+FUNCTION ToolName$() AS STRING
+    SELECT CASE Tool
+    CASE PENCIL
+        RETURN "Pencil"
+    CASE LINETOOL
+        RETURN "Line"
+    CASE BOXTOOL
+        RETURN "Box"
+    CASE FILLTOOL
+        RETURN "Filled"
+    CASE ERASER
+        RETURN "Eraser"
+    END SELECT
+    RETURN "Select"
+END FUNCTION
+
+' The status line, at the right of the palette: AppStatus$ (lib/app.pbas)
+' drawn on the canvas when it is on screen (the window has no room for a
+' LABEL above a canvas this tall).
+SUB Say(T$ AS STRING)
+    CALL AppSay(T$)
+    IF Visible() THEN
+        CALL ShowStatus
+    END IF
+END SUB
+
+SUB ShowStatus
+    DRAW FILL 364, 0, CW - 364, TOP - 2, 8
+    DRAW TEXT 366, 8, AppStatus$
+END SUB
+
+SUB Show
+    LOCAL D$ AS STRING
+    IF AppDirty THEN
+        D$ = "*"
+    END IF
+    CALL Say(ToolName$() + " " + STR$(Shade) + " " + DocName$ + D$)
+END SUB
+
+' ---------------------------------------------------------------- palette
+
+' Can the canvas be drawn on now?
+FUNCTION Visible() AS BOOLEAN
+    RETURN Painted AND NOT InFiles
+END FUNCTION
+
+' One tool's cell when there are no icons: its letter in a box.
+SUB LetterTool(I AS INTEGER)
+    CALL ToolCell(I)
+    DRAW FILL ToolCX, ToolCY, ToolSize, ToolSize, 8
+    DRAW BOX ToolCX, ToolCY, ToolSize, ToolSize
+    DRAW TEXT ToolCX + 8, ToolCY + 6, MID$("PLBFES", I, 1)
+    IF I = ToolSel THEN
+        DRAW INVERT ToolCX, ToolCY, ToolSize, ToolSize
+    END IF
+END SUB
+
+SUB PaintTools
+    LOCAL I AS INTEGER
+    IF IconsOk THEN
+        CALL ToolPaint(Icons)
+    ELSE
+        FOR I = 1 TO ToolN
+            CALL LetterTool(I)
+        NEXT I
+    END IF
+END SUB
+
+SUB PaintPalette
+    DRAW FILL 0, 0, CW, TOP, 8
+    CALL PaintTools
+    CALL SwatchPaint
+    CALL ShowStatus
+    DRAW LINE 0, TOP - 2, CW - 1, TOP - 2
+END SUB
+
+SUB SetTool(T AS INTEGER)
+    LOCAL Old AS INTEGER
+    CALL DropSel
+    Tool = T
+    Old = ToolSel
+    IF Visible() THEN
+        IF IconsOk THEN
+            CALL ToolPick(Icons, T)
+        ELSE
+            ToolSel = T
+            IF Old >= 1 THEN
+                CALL LetterTool(Old)
+            END IF
+            CALL LetterTool(T)
+        END IF
+    ELSE
+        ToolSel = T
+    END IF
+    CALL Show
+END SUB
+
+SUB SetShade(S AS INTEGER)
+    Shade = S
+    IF Visible() THEN
+        CALL SwatchPick(S + 1)
+    ELSE
+        SwatchSel = S + 1
+    END IF
+    CALL Show
+END SUB
+
+' ---------------------------------------------------------------- picture
+
+SUB PutPic(N AS INTEGER)
+    IF N = 1 THEN
+        IF BITMAPW(Pic1) < CW OR BITMAPH(Pic1) < CH THEN
+            DRAW FILL 0, TOP, CW, CH, 8
+        END IF
+        BITMAP PUT Pic1, 0, TOP
+    ELSE
+        IF BITMAPW(Pic2) < CW OR BITMAPH(Pic2) < CH THEN
+            DRAW FILL 0, TOP, CW, CH, 8
+        END IF
+        BITMAP PUT Pic2, 0, TOP
+    END IF
+END SUB
+
+' The part X, Y, W, H of the picture under a floating selection, put back.
+SUB PutBg(X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    IF Bg = 1 THEN
+        CALL PutPart(Pic1, X, Y, W, H)
+    ELSE
+        CALL PutPart(Pic2, X, Y, W, H)
+    END IF
+END SUB
+
+' The part X, Y, W, H of picture P (white where P is smaller).
+SUB PutPart(P AS BITMAP, X AS INTEGER, Y AS INTEGER, W AS INTEGER, H AS INTEGER)
+    CALL GeomClip(X, Y, W, H, 0, 0, BITMAPW(P), BITMAPH(P))
+    IF GeomW < W OR GeomH < H THEN
+        DRAW FILL X, Y + TOP, W, H, 8
+    END IF
+    IF GeomW > 0 THEN
+        BITMAP PUT P, GeomX, GeomY + TOP, GeomX, GeomY, GeomW, GeomH
+    END IF
+END SUB
+
+SUB Paint
+    Painted = TRUE
+    CALL PaintPalette
+    IF Floating THEN
+        CALL PutBg(0, 0, CW, CH)
+        BITMAP PUT Float, SX, SY + TOP
+    ELSE
+        CALL PutPic(Cur)
+    END IF
+    IF SelOn THEN
+        CALL Outline
+    END IF
+    IF GhOn THEN
+        CALL Ghost
+    END IF
+END SUB
+
+' A finished change: capture the picture into the other bitmap, which
+' becomes the current one; the old one is what Undo shows.
+SUB Commit
+    IF Cur = 1 THEN
+        BITMAP GET Pic2, 0, TOP, CW, CH
+        Cur = 2
+    ELSE
+        BITMAP GET Pic1, 0, TOP, CW, CH
+        Cur = 1
+    END IF
+    CanUndo = TRUE
+    CanRedo = FALSE
+    CALL AppChanged
+    CALL Show
+END SUB
+
+' Menus work in both windows, but the canvas is only on screen in Main:
+' a drawing command chosen in the Files window goes back to the picture
+' instead (choose it again there).
+FUNCTION Ready() AS BOOLEAN
+    IF InFiles THEN
+        CALL BackToMain
+        RETURN FALSE
+    END IF
+    RETURN TRUE
+END FUNCTION
+
+SUB UndoStep
+    IF NOT Ready() THEN
+        EXIT SUB
+    END IF
+    CALL DropSel  ' a floating selection is put down: Undo takes back its move
+    IF NOT CanUndo THEN
+        CALL Say("Nothing to undo")
+        EXIT SUB
+    END IF
+    CALL DropSel
+    Cur = 3 - Cur
+    CALL PutPic(Cur)
+    CanUndo = FALSE
+    CanRedo = TRUE
+    CALL AppChanged
+    CALL Show
+END SUB
+
+SUB RedoStep
+    IF NOT Ready() THEN
+        EXIT SUB
+    END IF
+    IF NOT CanRedo THEN
+        CALL Say("Nothing to redo")
+        EXIT SUB
+    END IF
+    CALL DropSel
+    Cur = 3 - Cur
+    CALL PutPic(Cur)
+    CanRedo = FALSE
+    CanUndo = TRUE
+    CALL AppChanged
+    CALL Show
+END SUB
+
+SUB ClearPic
+    IF NOT Ready() THEN
+        EXIT SUB
+    END IF
+    CALL DropSel
+    DRAW FILL 0, TOP, CW, CH, 8
+    CALL Commit
+END SUB
+
+' ---------------------------------------------------------------- selection
+
+' The selection's outline in XOR ink: drawn twice, it is gone.
+SUB Outline
+    DRAW INK XOR
+    DRAW BOX SX, SY + TOP, SW, SH
+    DRAW INK BLACK
+END SUB
+
+' Put down a floating selection (a change to commit), or forget an outline.
+' A move being dragged ends where the selection is.
+SUB DropSel
+    IF Moving THEN
+        IF Visible() THEN
+            CALL GhostOff
+        END IF
+        GhOn = FALSE
+        Moving = FALSE
+    END IF
+    IF NOT SelOn THEN
+        EXIT SUB
+    END IF
+    IF NOT Visible() THEN  ' the canvas is not on screen: Paint redraws
+        IF Floating THEN
+            EXIT SUB
+        END IF
+        SelOn = FALSE
+        EXIT SUB
+    END IF
+    CALL Outline
+    SelOn = FALSE
+    IF Floating THEN
+        Floating = FALSE
+        CALL Commit
+    END IF
+END SUB
+
+' Lift the selection off the picture: Float holds it, the other bitmap
+' the picture with white where it was.
+SUB Lift
+    CALL Outline
+    BITMAP GET Float, SX, SY + TOP, SW, SH
+    DRAW FILL SX, SY + TOP, SW, SH, 8
+    Bg = 3 - Cur
+    IF Bg = 1 THEN
+        BITMAP GET Pic1, 0, TOP, CW, CH
+    ELSE
+        BITMAP GET Pic2, 0, TOP, CW, CH
+    END IF
+    BITMAP PUT Float, SX, SY + TOP
+    CALL Outline
+    Floating = TRUE
+    CALL AppChanged
+    CALL Show
+END SUB
+
+' Move the floating selection to X, Y (kept inside the picture).
+SUB MoveSel(X AS INTEGER, Y AS INTEGER)
+    X = GeomClamp(X, 0, CW - SW)
+    Y = GeomClamp(Y, 0, CH - SH)
+    IF X = SX AND Y = SY THEN
+        EXIT SUB
+    END IF
+    CALL Outline
+    CALL PutBg(SX, SY, SW, SH)
+    SX = X
+    SY = Y
+    BITMAP PUT Float, SX, SY + TOP
+    CALL Outline
+END SUB
+
+' The ghost: the outline of the selection at GhX, GhY while it is dragged
+' (drawn in XOR ink, so drawing it again erases it).
+SUB Ghost
+    DRAW INK XOR
+    DRAW BOX GhX, GhY + TOP, SW, SH
+    DRAW INK BLACK
+END SUB
+
+' The ghost moved to X, Y (kept inside the picture); none where the
+' selection already is (its own outline shows that place).
+SUB GhostTo(X AS INTEGER, Y AS INTEGER)
+    X = GeomClamp(X, 0, CW - SW)
+    Y = GeomClamp(Y, 0, CH - SH)
+    IF GhOn AND X = GhX AND Y = GhY THEN
+        EXIT SUB
+    END IF
+    CALL GhostOff
+    IF X = SX AND Y = SY THEN
+        EXIT SUB
+    END IF
+    GhX = X
+    GhY = Y
+    GhOn = TRUE
+    CALL Ghost
+END SUB
+
+SUB GhostOff
+    IF GhOn THEN
+        CALL Ghost
+        GhOn = FALSE
+    END IF
+END SUB
+
+' Float, already loaded, floating at the top left over the picture as it is.
+SUB FloatIt
+    SX = 0
+    SY = 0
+    SW = BITMAPW(Float)
+    SH = BITMAPH(Float)
+    Bg = Cur
+    Floating = TRUE
+    SelOn = TRUE
+    Tool = SELECTOR
+    ToolSel = SELECTOR
+    IF Visible() THEN
+        CALL PaintTools
+        BITMAP PUT Float, SX, SY + TOP
+        CALL Outline
+    END IF
+    CALL AppChanged
+    CALL Show
+END SUB
+
+FUNCTION NeedSel() AS BOOLEAN
+    IF NOT Ready() THEN
+        RETURN FALSE
+    END IF
+    IF NOT SelOn THEN
+        CALL Say("Select an area first")
+        RETURN FALSE
+    END IF
+    RETURN TRUE
+END FUNCTION
+
+SUB CopySel
+    IF NOT NeedSel() THEN
+        EXIT SUB
+    END IF
+    CALL Outline
+    BITMAP GET Board, SX, SY + TOP, SW, SH
+    CALL Outline
+    HasBoard = TRUE
+    CALL Say("Copied " + STR$(SW) + " x " + STR$(SH))
+END SUB
+
+SUB DeleteSel
+    IF NOT NeedSel() THEN
+        EXIT SUB
+    END IF
+    CALL Outline
+    IF Floating THEN
+        CALL PutBg(SX, SY, SW, SH)
+        Floating = FALSE
+    ELSE
+        DRAW FILL SX, SY + TOP, SW, SH, 8
+    END IF
+    SelOn = FALSE
+    CALL Commit
+END SUB
+
+SUB CutSel
+    IF NOT NeedSel() THEN
+        EXIT SUB
+    END IF
+    CALL CopySel
+    CALL DeleteSel
+END SUB
+
+SUB PasteBoard
+    IF NOT Ready() THEN
+        EXIT SUB
+    END IF
+    IF NOT HasBoard THEN
+        CALL Say("Copy an area first")
+        EXIT SUB
+    END IF
+    CALL DropSel
+    BITMAP PUT Board, 0, TOP
+    BITMAP GET Float, 0, TOP, BITMAPW(Board), BITMAPH(Board)
+    CALL PutPic(Cur)
+    CALL FloatIt
+END SUB
+
+' ---------------------------------------------------------------- drawing
+
+' The rectangle between X0, Y0 and X, Y (both corners included).
+SUB RectOf(X AS INTEGER, Y AS INTEGER)
+    CALL GeomSpan(X0, Y0, X, Y)
+    SX = GeomX
+    SY = GeomY
+    SW = GeomW
+    SH = GeomH
+END SUB
+
+' The rubber band of the Line, Box, Filled and Select tools, in XOR ink.
+SUB Band(X AS INTEGER, Y AS INTEGER)
+    DRAW INK XOR
+    IF Tool = LINETOOL THEN
+        DRAW LINE X0, Y0 + TOP, X, Y + TOP
+    ELSE
+        CALL RectOf(X, Y)
+        DRAW BOX SX, SY + TOP, SW, SH
+    END IF
+    DRAW INK BLACK
+END SUB
+
+SUB Rub(X AS INTEGER, Y AS INTEGER)
+    DRAW FILL GeomClamp(X - 4, 0, CW - 8), GeomClamp(Y - 4, 0, CH - 8) + TOP, 8, 8, 8
+END SUB
+
+SUB Ink
+    IF Shade = 8 THEN
+        DRAW INK WHITE
+    END IF
+END SUB
+
+SUB Press(X AS INTEGER, Y AS INTEGER)
+    IF Tool = SELECTOR AND SelOn THEN
+        IF GeomIn(X, Y, SX, SY, SW, SH) THEN
+            IF NOT Floating THEN
+                CALL Lift
+            END IF
+            GX = X - SX
+            GY = Y - SY
+            Moving = TRUE
+            EXIT SUB
+        END IF
+    END IF
+    CALL DropSel
+    X0 = X
+    Y0 = Y
+    PX = X
+    PY = Y
+    Down = TRUE
+    SELECT CASE Tool
+    CASE PENCIL
+        CALL Ink
+        DRAW PIXEL X, Y + TOP
+        DRAW INK BLACK
+    CASE ERASER
+        CALL Rub(X, Y)
+    CASE ELSE
+        CALL Band(X, Y)
+    END SELECT
+END SUB
+
+SUB Drag(X AS INTEGER, Y AS INTEGER)
+    SELECT CASE Tool
+    CASE PENCIL
+        CALL Ink
+        DRAW LINE PX, PY + TOP, X, Y + TOP
+        DRAW INK BLACK
+    CASE ERASER
+        CALL Rub(X, Y)
+    CASE ELSE
+        CALL Band(PX, PY)
+        CALL Band(X, Y)
+    END SELECT
+    PX = X
+    PY = Y
+END SUB
+
+SUB Release(X AS INTEGER, Y AS INTEGER)
+    CALL Drag(X, Y)
+    Down = FALSE
+    SELECT CASE Tool
+    CASE LINETOOL
+        CALL Band(X, Y)
+        CALL Ink
+        DRAW LINE X0, Y0 + TOP, X, Y + TOP
+        DRAW INK BLACK
+    CASE BOXTOOL
+        CALL Band(X, Y)
+        CALL Ink
+        DRAW BOX SX, SY + TOP, SW, SH
+        DRAW INK BLACK
+    CASE FILLTOOL
+        CALL Band(X, Y)
+        DRAW FILL SX, SY + TOP, SW, SH, Shade
+    CASE SELECTOR
+        IF SW < 2 AND SH < 2 THEN  ' a click: nothing selected
+            CALL Band(X, Y)
+            CALL Show
+            EXIT SUB
+        END IF
+        ' the band stays as the selection's outline
+        SelOn = TRUE
+        Floating = FALSE
+        CALL Say("Selected " + STR$(SW) + " x " + STR$(SH))
+        EXIT SUB
+    END SELECT
+    CALL Commit
+END SUB
+
+' A drag in progress given up (the Stop key): its band is taken away.
+SUB CancelDrag
+    IF Tool = LINETOOL OR Tool = BOXTOOL OR Tool = FILLTOOL OR Tool = SELECTOR THEN
+        CALL Band(PX, PY)
+    END IF
+    Down = FALSE
+    IF Tool = PENCIL OR Tool = ERASER THEN  ' already on the picture
+        CALL Commit
+    END IF
+END SUB
+
+SUB Mouse
+    LOCAL X AS INTEGER
+    LOCAL Y AS INTEGER
+    LOCAL T AS INTEGER
+    X = GeomClamp(MOUSEX, 0, CW - 1)
+    Y = GeomClamp(MOUSEY - TOP, 0, CH - 1)
+    SELECT CASE MOUSEEVENT
+    CASE 1
+        IF MOUSEY < TOP THEN  ' the palette
+            T = ToolAt(MOUSEX, MOUSEY)
+            IF T > 0 THEN
+                CALL SetTool(T)
+            ELSE
+                T = SwatchAt(MOUSEX, MOUSEY)
+                IF T > 0 THEN
+                    CALL SetShade(T - 1)
+                END IF
+            END IF
+            EXIT SUB
+        END IF
+        CALL Press(X, Y)
+    CASE 2
+        IF Moving THEN
+            CALL GhostTo(X - GX, Y - GY)
+        ELSE
+            IF Down THEN
+                CALL Drag(X, Y)
+            END IF
+        END IF
+    CASE 3
+        IF Moving THEN
+            CALL GhostOff
+            CALL MoveSel(X - GX, Y - GY)
+            Moving = FALSE
+        ELSE
+            IF Down THEN
+                CALL Release(X, Y)
+            END IF
+        END IF
+    END SELECT
+END SUB
+
+SUB Keys
+    LOCAL K AS INTEGER
+    K = KEYCODE
+    IF K >= 97 AND K <= 122 THEN
+        K = K - 32
+    END IF
+    IF Down OR Moving THEN
+        IF K = KC_STOP AND Down THEN
+            CALL CancelDrag
+        END IF
+        EXIT SUB
+    END IF
+    IF SelOn AND K >= KC_UP AND K <= KC_RIGHT THEN
+        IF NOT Floating THEN
+            CALL Lift
+        END IF
+        SELECT CASE K
+        CASE KC_UP
+            CALL MoveSel(SX, SY - 1)
+        CASE KC_DOWN
+            CALL MoveSel(SX, SY + 1)
+        CASE KC_LEFT
+            CALL MoveSel(SX - 1, SY)
+        CASE KC_RIGHT
+            CALL MoveSel(SX + 1, SY)
+        END SELECT
+        EXIT SUB
+    END IF
+    SELECT CASE K
+    CASE 80
+        CALL SetTool(PENCIL)
+    CASE 76
+        CALL SetTool(LINETOOL)
+    CASE 66
+        CALL SetTool(BOXTOOL)
+    CASE 70
+        CALL SetTool(FILLTOOL)
+    CASE 69
+        CALL SetTool(ERASER)
+    CASE 83
+        CALL SetTool(SELECTOR)
+    CASE 48 TO 56
+        CALL SetShade(K - 48)
+    CASE KC_DELETE, KC_BACKSPACE
+        IF SelOn THEN
+            CALL DeleteSel
+        END IF
+    CASE KC_STOP
+        CALL Quit
+    END SELECT
+END SUB
+
+' ---------------------------------------------------------------- files
+
+FUNCTION PicError$(Code AS INTEGER) AS STRING
+    SELECT CASE Code
+    CASE 248
+        RETURN "not a picture"
+    CASE 252
+        RETURN "too large"
+    END SELECT
+    RETURN AppError$(Code)
+END FUNCTION
+
+' Target$ from FileName$: upper case, ".PBI" added when there is no dot.
+FUNCTION TargetOk() AS BOOLEAN
+    Target$ = UCASE$(FileName$)
+    IF LEN(Target$) = 0 THEN
+        MESSAGE "Type a file name"
+        RETURN FALSE
+    END IF
+    IF INSTR(Target$, ".") = 0 THEN
+        IF LEN(Target$) > 8 THEN
+            MESSAGE "A name has at most 8 characters before the dot"
+            RETURN FALSE
+        END IF
+        Target$ = Target$ + ".PBI"
+    END IF
+    RETURN TRUE
+END FUNCTION
+
+' Save the current picture as Target$; TRUE if it was saved. A floating
+' selection is put down first.
+FUNCTION SaveTo() AS BOOLEAN
+    CALL DropSel
+    IF Cur = 1 THEN
+        BITMAP SAVE Pic1, Target$
+    ELSE
+        BITMAP SAVE Pic2, Target$
+    END IF
+    IF IOERR <> 0 THEN
+        MESSAGE "Not saved: " + PicError$(IOERR)
+        RETURN FALSE
+    END IF
+    DocName$ = Target$
+    CALL AppSaved
+    CALL Show
+    RETURN TRUE
+END FUNCTION
+
+' For lib/app.pbas: save under the document's name (or ask for one).
+FUNCTION AppSave() AS BOOLEAN
+    IF LEN(DocName$) = 0 THEN
+        CALL ShowFiles
+        RETURN FALSE
+    END IF
+    Target$ = DocName$
+    RETURN SaveTo()
+END FUNCTION
+
+SUB SavePic
+    LOCAL Done AS BOOLEAN
+    Done = AppSave()
+END SUB
+
+SUB SaveAs
+    LOCAL Done AS BOOLEAN
+    IF NOT TargetOk() THEN
+        EXIT SUB
+    END IF
+    Done = SaveTo()
+    IF Done THEN
+        CALL BackToMain
+    END IF
+END SUB
+
+' Open Target$ into the bitmap that is not current; only a good picture
+' that fits replaces the one on the canvas.
+SUB OpenPic
+    LOCAL W AS INTEGER
+    LOCAL H AS INTEGER
+    IF NOT TargetOk() THEN
+        EXIT SUB
+    END IF
+    IF NOT AppMayClose() THEN
+        EXIT SUB
+    END IF
+    SelOn = FALSE
+    IF Cur = 1 THEN
+        BITMAP LOAD Pic2, Target$
+        W = BITMAPW(Pic2)
+        H = BITMAPH(Pic2)
+    ELSE
+        BITMAP LOAD Pic1, Target$
+        W = BITMAPW(Pic1)
+        H = BITMAPH(Pic1)
+    END IF
+    IF IOERR <> 0 THEN
+        MESSAGE "Not opened: " + PicError$(IOERR)
+        CALL NoUndo
+        EXIT SUB
+    END IF
+    IF W > CW OR H > CH THEN
+        MESSAGE "Not opened: the picture is larger than " + STR$(CW) + " x " + STR$(CH)
+        CALL NoUndo
+        EXIT SUB
+    END IF
+    Cur = 3 - Cur
+    CanUndo = FALSE
+    CanRedo = FALSE
+    DocName$ = Target$
+    CALL AppSaved
+    CALL Show
+    CALL BackToMain
+END SUB
+
+' Bring a picture in as a floating selection over the current one.
+SUB ImportPic
+    IF NOT TargetOk() THEN
+        EXIT SUB
+    END IF
+    IF Floating THEN
+        MESSAGE "Put down the floating selection first"
+        EXIT SUB
+    END IF
+    SelOn = FALSE
+    BITMAP LOAD Float, Target$
+    IF IOERR <> 0 THEN
+        MESSAGE "Not imported: " + PicError$(IOERR)
+        EXIT SUB
+    END IF
+    IF BITMAPW(Float) > CW OR BITMAPH(Float) > CH THEN
+        MESSAGE "Not imported: the picture is larger than " + STR$(CW) + " x " + STR$(CH)
+        EXIT SUB
+    END IF
+    CALL FloatIt
+    CALL Say("Imported: drag it, click off")
+    CALL BackToMain
+END SUB
+
+' After a failed open the other bitmap may hold part of the file (or a
+' picture too large to show), so it is no longer the picture before the
+' last change: Undo and Redo are off until the next change.
+SUB NoUndo
+    CanUndo = FALSE
+    CanRedo = FALSE
+END SUB
+
+SUB NewPic
+    IF NOT Ready() THEN
+        EXIT SUB
+    END IF
+    IF NOT AppMayClose() THEN
+        EXIT SUB
+    END IF
+    Floating = FALSE
+    SelOn = FALSE
+    DRAW FILL 0, TOP, CW, CH, 8
+    CALL Commit
+    CanUndo = FALSE
+    DocName$ = ""
+    CALL AppSaved
+    CALL Show
+END SUB
+
+SUB ShowFiles
+    CALL DropSel
+    FileName$ = DocName$
+    InFiles = TRUE
+    SHOW Files
+END SUB
+
+SUB BackToMain
+    InFiles = FALSE
+    SHOW Main
+END SUB
+
+SUB Quit
+    IF AppMayClose() THEN
+        EXIT
+    END IF
+END SUB
+
+' ---------------------------------------------------------------- start
+
+ToolN = 6
+ToolSize = 24
+ToolX = 4
+ToolY = 2
+ToolGap = 2
+SwatchN = 9
+SwatchSize = 16
+SwatchX = 184
+SwatchY = 6
+BITMAP LOAD Icons, "P2ICONS.PBI"
+IconsOk = IOERR = 0
+IF IconsOk THEN
+    IconsOk = BITMAPW(Icons) = 24 AND BITMAPH(Icons) = 144
+END IF
+Cur = 1
+CALL SetTool(PENCIL)
+CALL SetShade(0)
+IF NOT IconsOk THEN
+    CALL Say("No P2ICONS.PBI: letters")
+END IF
+END

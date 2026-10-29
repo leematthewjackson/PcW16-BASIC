@@ -278,6 +278,11 @@ class Timer(Stmt):
 
 
 @dataclass
+class OnStop(Stmt):
+    handler: str  # M15: ON STOP Handler, a FUNCTION ... AS BOOLEAN (Tasks > Stop)
+
+
+@dataclass
 class TimerSwitch(Stmt):
     on: bool  # TIMER ON / TIMER OFF
 
@@ -310,12 +315,14 @@ class Slider(Stmt):
 # --- M9 Stage B: drawing surface -----------------------------------------------
 @dataclass
 class Canvas(Stmt):
-    """CANVAS width, height [, PAINT H] [, MOUSE H] [, KEYS H]."""
+    """CANVAS [Name,] width, height [, PAINT H] [, MOUSE H] [, KEYS H]
+    (M15: a name, needed when the program has more than one)."""
     width: int
     height: int
     paint: str | None = None
     mouse: str | None = None
     keys: str | None = None
+    name: str | None = None
 
 
 @dataclass
@@ -337,6 +344,17 @@ class PageOp(Stmt):
 
 
 @dataclass
+class TypeFont(Stmt):
+    """M15: TYPE FONT SWISS | TIMES, size [, BOLD] [, ITALIC] (screen
+    typography: the font of later DRAW TYPE, TYPEWIDTH and TYPEHEIGHT).
+    *value* is the size."""
+    family: str  # 'SWISS' | 'TIMES'
+    value: object  # Expr
+    bold: bool = False
+    italic: bool = False
+
+
+@dataclass
 class BitmapOp(Stmt):
     """M12: BITMAP op Bitmap [, arguments]; op is GET, PUT, SAVE or LOAD.
     M13: PUT of a part (x, y, sx, sy, w, h) and MASK, whose ``mask`` names
@@ -350,10 +368,13 @@ class BitmapOp(Stmt):
 @dataclass
 class Draw(Stmt):
     """DRAW op [arguments]: op is CLEAR, FILL, INVERT, BOX, LINE, PIXEL,
-    TEXT, SCROLL or INK (then ``ink`` is BLACK, WHITE or XOR)."""
+    TEXT, SCROLL or INK (then ``ink`` is BLACK, WHITE or XOR); M15: FONT,
+    TYPE."""
     op: str
     values: list = field(default_factory=list)  # list[Expr]
     ink: str | None = None
+    align: str | None = None  # M15: DRAW TEXT ... ALIGN LEFT / CENTRE / RIGHT
+    target: str | None = None  # M15: DRAW ON Name
 
 
 # --- M7: procedures, constants, SELECT CASE, loop exits ------------------------

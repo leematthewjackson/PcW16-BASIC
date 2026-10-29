@@ -22,12 +22,16 @@ PcW16 BASIC is a compiler (Python) that turns `.pbas` source into a Rosanne
   [LANGUAGE-SPEC.md](LANGUAGE-SPEC.md) and the [manual](docs/manual/README.md).
 - **Applications:** windows (up to 8 named ones), labels, text fields, tick
   boxes, radio buttons, number fields, lists, drop-down choices, sliders,
-  menus with shortcuts, button keys, alerts and questions, one timer.
+  menus with shortcuts, button keys, alerts and questions, one timer, and
+  Rosanne's Tasks → Stop with `ON STOP` to protect unsaved work.
   *Tested in XAnne*, with the limitations in
   [docs/limitations.md](docs/limitations.md).
-- **Graphics:** a drawing canvas with mouse and key events, held keys, black
-  and white drawing, bitmaps with parts and masks, PBI1 picture files made
-  from PNGs on a PC. *Tested in XAnne.*
+- **Graphics:** up to eight named drawing canvases in any windows, each with
+  its own mouse and key events and keyboard focus; held keys; black and white
+  drawing; Rosanne's twelve dialog fonts, with measured widths and alignment;
+  scalable Swiss and Times type from 6 to 72 points, plain, bold or italic;
+  bitmaps with parts and masks; PBI1 picture files made from PNGs on a PC.
+  *Tested in XAnne.*
 - **Data:** sequential text files, text buffers of up to 64K for editors,
   databases of records with safe saving, backup and recovery, sorting and
   searching. *Tested in XAnne.*
@@ -43,8 +47,8 @@ PcW16 BASIC is a compiler (Python) that turns `.pbas` source into a Rosanne
   memory, assets, test), the picture converter, file checkers, the simulator
   and the test suite.
 - **Example applications:** a text editor, an address book, a to-do list, a
-  paint program, a screen designer, a sprite editor, a report generator and a
-  platform game, each run by the owner in XAnne, with the open items
+  paint program, a screen designer, a sprite editor, a report generator, a
+  type specimen and a platform game, each run by the owner in XAnne, with the open items
   the catalogue notes ([examples/README.md](examples/README.md)).
 
 ## Next-phase candidates
@@ -53,11 +57,8 @@ Work that is well understood and could be done without new research. It is
 listed, not scheduled.
 
 **Release.**
-- Choose a licence ([LICENSING.md](LICENSING.md)): the compiler, the runtime
-  inside every compiled program, the libraries and examples, and the pixel
-  art each need terms.
-- Publish a first release candidate with its checksums, then collect reports
-  and fix only release-blocking defects before a 1.0.
+- Publish release candidate 2 (1.0.0rc2) with its checksums, then collect
+  reports and fix only release-blocking defects before a 1.0.
 
 **Compiler defects found by the capability audit.** The M14 revision fixed
 most of them: `KEYDOWN` without a CANVAS, `check` running only the front end,
@@ -78,8 +79,11 @@ capacity message ([CHANGELOG.md](CHANGELOG.md)). Still open:
   *Simulator only* so far.
 - XAnne checks not yet performed: held keys in the timing probe, menu
   shortcuts while a text field has the focus, the sprite editor's keys, an
-  export to a read-only disk, the Stop and Help button keys, Return in a text
+  export to a read-only disk, the Help button key, Return in a text
   field (known issue KI-6, docs/limitations.md).
+- The dialog fonts' line heights, from screenshots, which would allow a
+  `TEXTHEIGHT` (known issue KI-106, docs/limitations.md); the speed of
+  scalable type on screen.
 - `RND` and `RANDOMIZE` in XAnne (no example uses them yet).
 - **A first run on a real PcW16** (known issue KI-85, docs/limitations.md).
   Everything so far is emulator evidence.
@@ -89,8 +93,6 @@ capacity message ([CHANGELOG.md](CHANGELOG.md)). Still open:
   click (known issues KI-1 and KI-2, docs/limitations.md);
 - a list's double-click action never runs in XAnne (known issue KI-25, docs/limitations.md);
 - a list's scroll-bar drag can start only near the handle (known issue KI-5, docs/limitations.md);
-- whether a click on a canvas takes the keyboard focus from a text field
-  (known issue KI-87, docs/limitations.md);
 - a status line in the older address book can exceed what a label shows
   (known issue KI-63, docs/limitations.md).
 
@@ -101,8 +103,11 @@ need design work and the owner's agreement; none is planned.
 
 - Setting and reading single pixels inside a BITMAP (known issue KI-88, docs/limitations.md).
 - Sorting and searching databases of more than 250 records (known issue KI-56, docs/limitations.md).
-- `DRAW TEXT` cut by measured width rather than by the widest character
-  (known issue KI-76, docs/limitations.md); this would change accepted programs, so it needs care.
+- `DRAW TEXT` cut by measured width in every program, not only in those that
+  use `DRAW FONT` (known issue KI-76, docs/limitations.md); this would change
+  accepted programs, so it needs care.
+- A `TEXTHEIGHT` for the dialog fonts, once their heights are measured (known
+  issue KI-106, docs/limitations.md).
 - A crash-safe `FILESAVE` (write, then rename) (known issue KI-11, docs/limitations.md).
 - Faster `TEXT LOAD` (known issue KI-43, docs/limitations.md).
 - Denser generated code, to leave more room in the resident block (known issue KI-28, docs/limitations.md).
@@ -131,7 +136,8 @@ They are possible only if the research succeeds.
   by the events the runtime receives (known issue KI-25, docs/limitations.md).
 - **Timing and the clock on real hardware.** How fine the clock's sixteenths
   are, and how often a timer really runs, are measured only in XAnne.
-- **What Rosanne does when an open file is deleted or renamed** (known issue KI-16, docs/limitations.md), and whether its Tasks → Stop runs a program's exit path (known issue KI-35, docs/limitations.md).
+- **What Rosanne does when an open file is deleted or renamed** (known issue KI-16, docs/limitations.md).
+- **Tasks → Stop for a program without menus.** Rosanne shows such a program no menu bar, so Stop never reaches it (known issue KI-108, docs/limitations.md).
 - **Overlapping scrolls** in both directions (known issue KI-40, docs/limitations.md).
 
 The owner decides which of these, if any, are pursued.

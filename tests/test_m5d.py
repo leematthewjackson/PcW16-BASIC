@@ -333,11 +333,13 @@ class M5dBehaviourTests(unittest.TestCase):
         """WIDTHDG (owner, XAnne): os_dialog_string_width returned carry in
         every test, so the labels never call it. M11 corrective: the one
         call is TEXTWIDTH's (rt_text_width, IF PB_TEXTW), which reads HL and
-        not the carry (docs/M11-CORRECTIVE.md); no label code uses it."""
+        not the carry (docs/M11-CORRECTIVE.md); no label code uses it. M15: the
+        other is DRAW FONT's measuring of DRAW TEXT (rt_cv_tw, IF PB_DWFONT), the same way."""
         text = RUNTIME.read_text(encoding="utf-8")
-        self.assertEqual(len(re.findall(r"ld a,82\b", text)), 1)
-        width = text[text.index("\nrt_text_width:"):]
-        self.assertIn("ld a,82", width[:width.index("\n    ret\n")])
+        self.assertEqual(len(re.findall(r"ld a,82\b", text)), 2)
+        for label in ("\nrt_text_width:", "\nrt_cv_tw:"):
+            width = text[text.index(label):]
+            self.assertIn("ld a,82", width[:width.index("\n    ret\n")])
         src = window("LABEL S$", buttons=1).replace('Who$ = "1"', f'S$ = "{WIDEST}"')
         n = numbers(src)
         run = self.run_ok(src, events=[("click", n["B1"])])

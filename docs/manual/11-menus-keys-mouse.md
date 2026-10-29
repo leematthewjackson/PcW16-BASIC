@@ -8,7 +8,8 @@ Buttons' own keys (`KEY GREEN`, `DEFAULT` for Return) are in
 Evidence levels: *Tested in XAnne* (the owner ran it in the XAnne emulator, Rosanne 1.12),
 *Simulator only*, *Untested*. Nothing has yet been tested on a real PcW16.
 
-Contents: [MENU and ITEM](#menu-and-item) · [Which input goes where](#which-input-goes-where) ·
+Contents: [MENU and ITEM](#menu-and-item) · [Tasks → Stop and ON STOP](#tasks--stop-and-on-stop) ·
+[Which input goes where](#which-input-goes-where) ·
 [Canvas keys: KEYS, KEYCODE, KEYSHIFT](#canvas-keys-keys-keycode-keyshift) ·
 [Held keys: KEYDOWN](#held-keys-keydown) · [lib/keys.pbas](#libkeyspbas-names-for-keys) ·
 [The mouse: MOUSE, MOUSEX, MOUSEY, MOUSEEVENT](#the-mouse-mouse-mousex-mousey-mouseevent) ·
@@ -144,6 +145,69 @@ byte; do not use it.
 `../../examples/paint2.pbas`; spec
 [§5.1](../../LANGUAGE-SPEC.md#51-m6-phase-1--native-application-interfaces) (Menus) and
 [§5.15](../../LANGUAGE-SPEC.md#515-m13--ticks-the-clock-in-sixteenths-and-held-keys) (Menu shortcuts).
+
+## Tasks → Stop and ON STOP
+
+**Syntax**
+
+```text
+ON STOP Handler        Handler: FUNCTION Handler() AS BOOLEAN, without parameters
+```
+
+**Meaning.** Rosanne's Tasks menu, the first menu on the bar, has Stop as its first entry.
+- A program with menus **ends** when Stop is chosen, as on `EXIT`: the window is removed, files are closed and memory is given back.
+- With `ON STOP Handler`, Stop runs the handler first, like a menu item's handler. **TRUE ends the program, FALSE keeps it running.** The handler may ask a question or save a file.
+- `lib/app.pbas` has one ready: `ON STOP AppMayClose` asks about unsaved changes (Save / Discard / Cancel).
+- One `ON STOP` per program, at the top level.
+
+**Example**
+
+```pbas
+DIM Edited AS BOOLEAN
+DIM A AS INTEGER
+
+WINDOW "Stop asks"
+CHECKBOX Edited, "Pretend there are changes"
+BUTTON "Quit", Quit
+MENU "File"
+    ITEM "Quit", Quit
+END MENU
+ON STOP MayStop
+
+FUNCTION MayStop() AS BOOLEAN
+    IF NOT Edited THEN
+        RETURN TRUE
+    END IF
+    A = ASK("Discard the changes?", "Discard", "Cancel")
+    RETURN A = 1
+END FUNCTION
+
+SUB Quit
+    EXIT
+END SUB
+END
+```
+
+```pbas-error
+' expect-error: ON STOP needs a FUNCTION QUIT() AS BOOLEAN
+WINDOW "Wrong"
+BUTTON "Quit", Quit
+ON STOP Quit
+SUB Quit
+    EXIT
+END SUB
+END
+```
+
+**Limits.**
+- A program without menus shows no menu bar, so Stop never reaches it (known issue KI-108). The compiler warns about `ON STOP` there; give such a program a Quit button, or a menu.
+- The other Tasks entries are Rosanne's.
+- The build option `--legacy-tasks-stop` brings back the old behaviour (Stop ignored) only to rebuild old executables byte for byte; do not use it.
+- `examples/stopguard.pbas` is a small complete program that saves its note, or asks, before Stop ends it.
+
+*Evidence:*
+- XAnne (M15a): Stop arrives as Tasks entry 0, and a program that ends on it does so cleanly after its own code has run.
+- `ON STOP`, tested in XAnne (M15c S1–S4, S6, S7): ending at once, staying open, asking first, saving then ending, and the unsaved-work questions of PAINT II, DESIGNER, SPRITED, MDEDIT IV and CONTACTS IV.
 
 ## Which input goes where
 

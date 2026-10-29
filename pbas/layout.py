@@ -266,6 +266,7 @@ class DialogLayout:
     # M9: (frame object number, drawing area screen x, y, width, height,
     # widget) of the window's CANVAS, or None
     canvas: tuple | None = None
+    canvases: tuple = ()  # M15: every CANVAS of the window, as above, in source order
 
 
 def _word(value: int) -> bytes:
@@ -380,6 +381,7 @@ def build_dialog(program, window: WindowDecl | None = None, menus: bool = False)
 
     y = CONTENT_TOP
     canvas = None
+    canvases = []  # M15
     for widget in rows:
         if widget.var_name is not None:  # TEXTBOX, CHECKBOX, dynamic LABEL, RADIO, NUMBERBOX
             if widget.var_name in bound:
@@ -553,7 +555,8 @@ def build_dialog(program, window: WindowDecl | None = None, menus: bool = False)
                      + bytes((0,)) + FIELD_BOX_PARAMS)
             number = add("CANVAS", None, frame, widget)
             dx, dy = geometry.dialog[0], geometry.dialog[1]
-            canvas = (number, dx + CANVAS_X + 1, dy + y + 1, widget.width, widget.height, widget)
+            canvases.append((number, dx + CANVAS_X + 1, dy + y + 1, widget.width, widget.height, widget))
+            canvas = canvas or canvases[-1]
             y += pitch
         elif widget.kind == "SLIDER":  # M6 Phase 2
             if y + SLIDER_PITCH > limit:
@@ -590,7 +593,7 @@ def build_dialog(program, window: WindowDecl | None = None, menus: bool = False)
     box = bytes((DG_DIALOG_BOX,)) + _rect(*geometry.dialog) + _ascii_z(window.title)
     definition = header + box + b"".join(o.definition for o in objects) + b"\0"
     layout = DialogLayout(definition, objects, handler_rows, focus or handler_rows[0][0], bindings, geometry,
-                          canvas)
+                          canvas, tuple(canvases))
     validate_layout(layout, line, column)
     return layout
 

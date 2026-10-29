@@ -93,6 +93,22 @@ real PcW16.**
 |---|---|---|---|
 | `developer-tests/dbprobe.pbas` | The database statements step by step. Each step shows one alert: clean-up; 40 records saved and loaded back; a second save keeping `.BAK`; recovery from `.BAK` and from `.NEW` (`DBRECOVERED` 2 and 1); a file that is not a database (`IOERR 248`); sorting and searching 200 records (time it with a watch); clean-up. **Writes, renames and deletes `DBPROBE.PDB`, `.NEW`, `.BAK` and `.TXT`.** | `python3 tools/build.py developer-tests/dbprobe.pbas` | Tested in XAnne: pass |
 
+## Acceptance programs (M14, M15)
+
+Each of these drives one release's new runtime behaviour, one button or menu choice a step, for the owner's
+XAnne sessions. They write files only in their own folder, under their own names; run them in a disposable
+folder.
+
+| Program | What it checks | Build | Result in XAnne |
+|---|---|---|---|
+| `developer-tests/m14prb.pbas` | The M14 runtime corrections: companion files refused (IOERR 253), the backup kept, `DB LOAD`'s type check, the STRING-field check, REAL rounding. | `python3 tools/build.py developer-tests/m14prb.pbas --runtime-banks all` | Tested in XAnne (M14 sessions F and G) |
+| `developer-tests/m15c/m15stop.pbas` | Tasks → Stop with `ON STOP`: end at once, stay open, ask first, write `M15STOP.TXT` then end. | `python3 tools/build.py developer-tests/m15c/m15stop.pbas` | Tested in XAnne (M15c S1–S4) |
+| `developer-tests/m15c/m15stnm.pbas` | `ON STOP` in a program without menus. Rosanne offers it no Tasks → Stop (KI-108); the build warns. | `python3 tools/build.py developer-tests/m15c/m15stnm.pbas` | Tested in XAnne (M15c S5: no Stop) |
+| `developer-tests/m15c/m15font.pbas` | The twelve dialog fonts: widths with a tick at each measured end, the cut at the right frame, `ALIGN`, and a font out of range (stops on purpose). | `python3 tools/build.py developer-tests/m15c/m15font.pbas` | Tested in XAnne (M15c F1–F5, r2 R1) |
+| `developer-tests/m15c/m15type.pbas` | Scalable type: the y reference against a ruled line, `TYPEWIDTH` and `TYPEHEIGHT` ticks, every size from 6 to 72 points, Times, bold and italic, a timing line, and a printed page. | `python3 tools/build.py developer-tests/m15c/m15type.pbas --runtime-banks all` | Tested in XAnne (M15c T1–T7, r2 R2–R4) |
+| `developer-tests/m15c/m15canv.pbas` | Several canvases: presses and drags, keys, `FOCUS` without a click, `DRAW ON`, repaint after an alert with the drawing stored, a canvas in a second window. | `python3 tools/build.py developer-tests/m15c/m15canv.pbas --runtime-banks all` | Tested in XAnne (M15c C1–C7, r2 R6) |
+| `developer-tests/m15prb.pbas` | The M15a research probe: how Rosanne delivers Tasks → Stop, its dialog fonts and typography calls. Not an ordinary program: `developer-tests/m15prb_build.py` builds it with the hand-written routines in `developer-tests/m15native.asm`. | `python3 developer-tests/m15prb_build.py OUTDIR` | Tested in XAnne (M15a) |
+
 ## Test documents
 
 - `developer-tests/edtest.md` is the document the editors open at start. Copy it to the PcW16 folder as `EDTEST.MD`

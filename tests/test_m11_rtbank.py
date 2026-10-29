@@ -54,7 +54,8 @@ class ConditionTests(unittest.TestCase):
             with self.subTest(program=src), tempfile.TemporaryDirectory() as tmp:
                 asm, prg = Path(tmp) / "p.asm", Path(tmp) / "p.prg"
                 # M14 (KI-100): CONTACTS III's resident-only build fits with its accepted code only
-                build(ROOT / src, asm, prg, legacy_file_safety=src.endswith("contacts3.pbas"))
+                build(ROOT / src, asm, prg, legacy_file_safety=src.endswith("contacts3.pbas"),
+                      legacy_tasks_stop=src.endswith("contacts3.pbas"))
                 text = asm.read_text(encoding="utf-8")
                 program, runtime = text.split(RUNTIME_MARKER, 1)
                 values = rtbank.switches(program)
@@ -292,7 +293,7 @@ class EquivalenceTests(unittest.TestCase):
         disk = kw.pop("files")
         # M14 (KI-100): CONTACTS III's resident-only build fits with its accepted file code only;
         # both builds use it, so that they compare like for like
-        extra = {"legacy_file_safety": True} if path.name == "contacts3.pbas" else {}
+        extra = {"legacy_file_safety": True, "legacy_tasks_stop": True} if path.name == "contacts3.pbas" else {}
         runs = []
         for options in (dict(extra), {"runtime_sections": "all", **extra}):
             d = z80sim.Disk(files={(F, n): v for n, v in disk.items()})
@@ -348,9 +349,9 @@ class EquivalenceTests(unittest.TestCase):
             with self.subTest(program=src), tempfile.TemporaryDirectory() as tmp:
                 t = Path(tmp)
                 legacy = src.endswith("contacts3.pbas")  # M14 (KI-100): like for like, as accepted
-                plain = build(ROOT / src, t / "a.asm", t / "a.prg", legacy_file_safety=legacy)
+                plain = build(ROOT / src, t / "a.asm", t / "a.prg", legacy_file_safety=legacy, legacy_tasks_stop=legacy)
                 banked = build(ROOT / src, t / "b.asm", t / "b.prg", runtime_sections="all",
-                               legacy_file_safety=legacy)
+                               legacy_file_safety=legacy, legacy_tasks_stop=legacy)
                 freed = plain.banked.resident_size - banked.banked.resident_size
                 self.assertGreaterEqual(freed, at_least)
                 self.assertTrue(re.search(r"runtime sections DB CANVAS", (t / "b.map").read_text()))

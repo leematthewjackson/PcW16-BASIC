@@ -141,7 +141,7 @@ The alert shows how much of the text fits 80 pixels. The result above is from th
 
 ## Limitations
 
-- One list per program: the library's state is global, and a program has one CANVAS.
+- One list per program: the library's state is global (draw it on one canvas).
 - Single selection only; there is no multiple selection and no double-click (the mouse reports no double-clicks).
 - No scroll bar: the list scrolls only with the keys (Up, Down, PgUp, PgDn, Home, End) or when your program calls `ListMoveTo`. The mouse chooses among the rows shown.
 

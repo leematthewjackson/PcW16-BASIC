@@ -5,7 +5,7 @@
 > simulator). References to `docs/M*.md`, `RUNTIME-RESULTS.md`, `KNOWN-ISSUES.md` and similar
 > files are to the project's engineering records, which are not part of this repository. Where
 > a later section extended the language, the earlier text says so in place; §5.16 lists what
-> the M14 revision made stricter or corrected. For learning the language, start with
+> the M14 revision made stricter or corrected, and §5.17 what M15 added. For learning the language, start with
 > [the developer manual](docs/manual/README.md); this file is the place to settle exactly
 > what a rule says. Current evidence for each feature is summarised in
 > [docs/limitations.md](docs/limitations.md).
@@ -129,7 +129,7 @@ END                              (mandatory, final)
 2. The window then opens: title, labels in source order, buttons in source order in one centred row (M5d: two rows when there are more than 3). The first button has the keyboard focus highlight (M5d: the `DEFAULT` button, if there is one).
 3. The program waits for events. A **mouse click on a button** runs that button's `SUB` once, to completion (including any `MESSAGE` alerts it shows); then the program waits again. Each click is one run of the handler; variables keep their values between clicks (one global scope). Two buttons may name the same `SUB`.
 4. Nothing else runs BASIC code: clicks on labels or the window background, double-clicks, keys and other OS messages are handed to Rosanne (`os_process_event`, per ROSAN283's event table) or ignored, and the program keeps waiting. A click outside the window does not close it (the definition's exit-by-click flag is 0). **Buttons cannot be activated from the keyboard in M3a** (M5d: except Return for a `DEFAULT` button, below).
-5. The program ends when a handler (or the main line) executes `EXIT`, or when Rosanne sends its exit message (`om_exit`). Either way an open window is removed (`os_dialog_remove`, restoring the screen) before `os_app_exit`. A runtime error (§8) in a handler is reported the same way and also removes the window.
+5. The program ends when a handler (or the main line) executes `EXIT`, or when Rosanne sends its exit message (`om_exit`; never observed in XAnne, M15a), or (M15, §5.17) on Rosanne's Tasks → Stop in a program with menus or `ON STOP`. Each way, an open window is removed (`os_dialog_remove`, restoring the screen) before `os_app_exit`. A runtime error (§8) in a handler is reported the same way and also removes the window.
 6. If Rosanne refuses the dialog definition or display, the program shows `Runtime error: the window could not be opened` and exits.
 
 **M3b — controls bound to variables (implemented: TEXTBOX, CHECKBOX).** `TEXTBOX name [, "caption"]` shows an editable single-line text field bound to the STRING `name`; `CHECKBOX name [, "caption"]` shows a tick box bound to the BOOLEAN `name`. Each declares its variable if no `DIM` did (types must agree). Values move between variables and controls **only** at these points:
@@ -304,7 +304,7 @@ END SELECT
   - It clears them: every element starts as 0, or as the empty string.
   - If fewer blocks are given than needed, it gives back the ones it got and stops with `Runtime error: not enough free memory for BANKED arrays at line N`, where N is the line of the first BANKED `DIM`.
   - A block that is not RAM, or that belongs to someone else, is treated the same way: it is never written.
-- **Lifetime.** The blocks are given back on every way a program ends: `END`, `EXIT`, a runtime error, or the system Quit (Tasks → Exit).
+- **Lifetime.** The blocks are given back on every way a program ends: `END`, `EXIT`, a runtime error, or Rosanne's Tasks → Stop (M15, §5.17; and om_exit, never observed in XAnne).
 - **Indexes.** Outside 1..k the program stops with `Runtime error: index out of range at line N`, as for ordinary arrays.
 - **Limits.**
   - **Reads per statement.** At most **4 BANKED elements** may be read by one statement (a compile error otherwise: copy some into variables first). The runtime keeps four copies at a time; a fifth would overwrite the first while it is still in use.
@@ -349,7 +349,7 @@ END SELECT
 
 *Evidence status:* **XAnne-accepted (owner, M9):** GFXPROBE G1–G7, UIBENCH and GFXBENCH, after the Rosanne 1.12 corrections KI-46 (grey 0..7; result in carry) and KI-49 (sloped lines as runs). The keys reaching KEYS are the G4 table (KI-41). Not measured in XAnne: drawing speed.
 
-**Declaration.** `CANVAS width, height [, PAINT P] [, MOUSE M] [, KEYS K]` in a `WINDOW` adds a drawing area: a white box with a 1-pixel black frame, stacked in source order like the other rows (height + 8 px), at x = 26. width and height are integer literals, 16..568 and 16..300; it must fit its window (a normal window holds 330 px across, a LARGE one 568). A program has at most one CANVAS. `P`, `M`, `K` are SUBs without parameters. `CANVAS` and `DRAW` are statement words only at the start of a statement; programs may still use them as names.
+**Declaration.** `CANVAS width, height [, PAINT P] [, MOUSE M] [, KEYS K]` in a `WINDOW` adds a drawing area: a white box with a 1-pixel black frame, stacked in source order like the other rows (height + 8 px), at x = 26. width and height are integer literals, 16..568 and 16..300; it must fit its window (a normal window holds 330 px across, a LARGE one 568). A program may have one unnamed CANVAS, as here, or up to 8 named ones (M15, §5.17). `P`, `M`, `K` are SUBs without parameters. `CANVAS` and `DRAW` are statement words only at the start of a statement; programs may still use them as names.
 
 **Coordinates.** Pixels inside the frame: (0, 0) is the top-left drawing pixel, x grows right, y down, up to width − 1 and height − 1. **Every drawing must lie inside the canvas** — otherwise the program stops with `Runtime error: drawing outside the canvas at line N` (nothing is drawn, nothing is clipped silently). The only exception is text, which is cut at the right edge (below).
 
@@ -382,7 +382,7 @@ w = 0 or h = 0 draws nothing. **Text** shows at most (width − x) div 11 charac
 
 `MOUSEX`, `MOUSEY`, `MOUSEEVENT`, `KEYCODE`, `KEYSHIFT` are INTEGER values usable in any expression of a program with a CANVAS (a compile error otherwise); they keep the last event's values.
 
-**Not defined (M9):** other fonts, text width measurement, clipping, circles and arcs, bitmaps (M12: §5.12), more than one canvas, vertical scroll bars, double-clicks, the right and centre mouse buttons.
+**Not defined (M9):** other fonts (M15: §5.17), text width measurement, clipping, circles and arcs, bitmaps (M12: §5.12), more than one canvas (M15: §5.17), vertical scroll bars, double-clicks, the right and centre mouse buttons.
 
 ### 5.7 M9 — TEXT buffers
 
@@ -821,6 +821,100 @@ examples/lib/keys.pbas names them all (`SC_LEFT`, `SC_KP4`, `SC_A`, …): use th
 
 **Not changed.** Programs that use none of these constructs compile to the bytes they had at M13-End (tools/diffbuild.py). A program with `DB LOAD`, `DB SAVE` or `BITMAP SAVE`, or with REAL arithmetic, compiles to new bytes.
 
+### 5.17 M15 — Tasks → Stop, dialog fonts, screen typography, several canvases
+
+*Evidence status:* **XAnne (owner, M15a, docs/M15A-PROBE.md):**
+- Tasks → Stop arrives as a Tasks menu selection, title 0, entry 0, and a program that ends on it does so cleanly after its own code has run (r5 Y1–Y3);
+- all twelve dialog fonts draw, each with its own widths (T1, T2);
+- scalable typo text draws on the screen from slot 0 at **10 points**, plain, bold and italic, in mode 0, inside a canvas (T4a–T4e).
+
+**XAnne (owner, M15c, docs/M15C-ACCEPTANCE.md):**
+- ON STOP and the default Stop: S1–S4, S6, S7 pass; **Rosanne offers no Tasks → Stop to a program without menus** (S5);
+- fonts 1–12 with TEXTWIDTH, ALIGN, the font error: pass;
+- typo text up to 72 pt, Times, bold, italic, and a PAGE print in the same program: pass; **Rosanne's y for typo text is the baseline** (T2), corrected below;
+- several canvases: events, keyboard focus by click and by `FOCUS`, repaint, a second window: pass.
+
+**XAnne (owner, M15c r2, docs/M15C-RETEST.md): R1–R6 pass** — the corrected type placement (top-left), the right-edge margins for dialog fonts other than 7 and for italic type, SPECIMEN through repeated changes at every size, and a canvas's drawing restored by its PAINT. **M15 is accepted.**
+
+Not measured in XAnne: the speed of type (eight lines took about 1/16 s, too coarse to compare) and the dialog fonts' line heights.
+
+The simulator's widths for dialog fonts other than 7 and for typo fonts are models (tests/z80sim.py), not Rosanne's fonts.
+
+**Tasks → Stop (W1).** Rosanne's Tasks menu (the menu bar's first menu, title 0) has Stop as its first entry. Up to M14 the runtime ignored it (KI-35). Now:
+- **a program with menus and no `ON STOP` ends** on Tasks → Stop, exactly as on `EXIT` (the window removed, files closed, memory given back). `tools/build.py --legacy-tasks-stop` keeps the M14 behaviour, only to rebuild accepted executables byte for byte;
+- `ON STOP Handler` (top level, at most one, in a program with a `WINDOW`) names a `FUNCTION Handler() AS BOOLEAN` without parameters. Tasks → Stop runs it like a menu handler (values read first, shown after): **TRUE ends the program, FALSE keeps it running**. The handler may ask (`ASK`), save files or show alerts. `lib/app.pbas`'s `AppMayClose` fits it directly: `ON STOP AppMayClose`;
+- a program without menus shows no menu bar, so Tasks → Stop cannot reach it (XAnne, M15c S5); the compiler warns about `ON STOP` in such a program;
+- the other Tasks entries are left to Rosanne. `EXIT`, Esc / `KEY STOP` buttons and om_exit are unchanged.
+
+**Dialog fonts (W2).** `DRAW FONT n` (n 1..12, else `Runtime error: a font is 1 to 12`) sets the font of later `DRAW TEXT` and `TEXTWIDTH`; the default is 7, as before.
+- In a program with `DRAW FONT`, `DRAW TEXT` is cut where the text stops fitting before the canvas's right edge, by measuring it (`os_dialog_string_width`), instead of the M9 rule of 11 px a character. Font 7's widths match its drawing exactly (M11); for the other fonts a glyph's ink may pass its measured end (M15c F3), so half the width of a `W` + 1 px is kept free at the edge.
+- Programs without `DRAW FONT` keep the M9 rule and their bytes.
+- Rosanne has no styles for these fonts and no call for their line height, so a whole 16-px line must still fit below y. The heights are to be measured in M15c; until then, leave room by eye.
+- `DRAW TEXT x, y, text$ ALIGN LEFT | CENTRE | RIGHT` (`CENTER` is accepted) places the measured text with its left edge, centre or right edge at x, never left of the canvas's left edge; it is then cut at the right edge as above. ALIGN is not allowed with a cell width.
+
+**Screen typography (W3).** Rosanne's scalable fonts on a canvas, the ones `PAGE` prints with:
+- `TYPE FONT SWISS | TIMES, size [, BOLD] [, ITALIC]` chooses the family's first font (or the list's first font if the family is missing), the size and the style.
+  - The size is one of 6, 8, 10, 11, 12, 14, 18, 24, 36, 72 (a literal is checked by the compiler; a computed size gives `Runtime error: a type size is …`).
+  - Without a `TYPE FONT`, Times 10 is used.
+  - Every size up to 72 points draws in XAnne without disturbing the screen (M15c T4).
+- `DRAW TYPE x, y, text$` draws the text in that font with its top-left at x, y. XOR ink (`DRAW INK XOR`) draws in XOR; otherwise the text is opaque. The checks:
+  - x must lie in the canvas, and the whole line (`TYPEHEIGHT`) below y;
+  - each character is measured (`os_typo_charwidth`) before it is drawn, and drawing stops before the first character that would pass the right edge (italic: a quarter of the ascender earlier, for its lean);
+  - Rosanne's `os_typo_charscreen` places a character by its **baseline** (M15c T2), so the runtime passes y + the ascender; the line then lies from y to y + `TYPEHEIGHT`, inside the canvas;
+  - characters outside 32..255 are drawn as `?`.
+- `TYPEWIDTH(text$)` is the width in pixels as DRAW TYPE advances (characters' widths in 1/1800", one pixel taken as 25/1800" from the M15a T4d screenshot). `TYPEHEIGHT` is the line's height in pixels (ascender + descender from `os_typo_info`).
+- Typo slot 0 is shared with `PAGE`: each side defines its font again only when the other has changed it, so a program may print and draw type in any order.
+
+**Several canvases (W4).**
+- `CANVAS Name, width, height [, PAINT P] [, MOUSE M] [, KEYS K]` names a canvas. A program may have **up to 8 canvases**, each named, in any of its windows (each must fit its window's rows). The single unnamed `CANVAS` of M9 is unchanged, and so is a program's code with one canvas, named or not.
+- `DRAW ON Name` makes `Name` the target of later `DRAW`, `TYPE`, `TEXTWIDTH`, `POINT` and `BITMAP GET/PUT` statements until the next `DRAW ON`. The first canvas is the target at the start.
+- A canvas's own `PAINT`, `MOUSE` and `KEYS` handlers draw on that canvas while they run; the `DRAW ON` target is current again after every handler.
+- Each canvas keeps its own `DRAW FONT` and `TYPE FONT`.
+- A canvas is on screen while its window is; drawing on one that is not stops the program as in M9.
+- Events:
+  - opening a window, and an alert in a handler (M9 PAINT rule), run the `PAINT` of every canvas of the window, in source order;
+  - a press goes to the canvas under the pointer and gives it the keyboard; the drag and the release go to the canvas pressed;
+  - keys go to the canvas with the keyboard: the one pressed last, or the one `FOCUS Name` chose, or else the window's first canvas.
+- `FOCUS Name` also moves Rosanne's focus to the canvas's frame (KI-87, M15c C4).
+- The runtime keeps no copy of any canvas's drawing (M9 PAINT rule): each canvas's `PAINT` must draw again what the program keeps (M15c C5, r2 R6).
+- **One canvas or several: two code paths.** With one canvas (named or not) the program keeps the M9 code: one descriptor, every `DRAW` goes to it, and `DRAW ON` with its own name is accepted and does nothing. With two or more, the program carries a table of its canvases and a working copy of the current one (`cgcanvas`); `DRAW ON`, the canvas's own handlers and the event dispatch copy the chosen entry into it (`PB_CVMULTI`). Nothing of the second path is assembled into a program with one canvas.
+
+Example (several canvases):
+
+```pbas
+DIM Shade AS INTEGER
+WINDOW "Two", LARGE
+CANVAS Strip, 300, 30, PAINT StripPaint, MOUSE StripMouse
+CANVAS Board, 300, 100, PAINT BoardPaint
+BUTTON "Mark", Mark
+BUTTON "Quit", Quit
+SUB StripPaint
+    DRAW CLEAR
+    DRAW FILL 0, 0, 40, 30, Shade
+END SUB
+SUB StripMouse
+    IF MOUSEEVENT = 1 THEN
+        Shade = (Shade + 1) MOD 8
+        CALL StripPaint
+    END IF
+END SUB
+SUB BoardPaint
+    DRAW CLEAR
+    DRAW FONT 3
+    DRAW TEXT 150, 10, "Board" ALIGN CENTRE
+END SUB
+SUB Mark
+    DRAW ON Board
+    DRAW INVERT 0, 0, 300, 100
+END SUB
+SUB Quit
+    EXIT
+END SUB
+END
+```
+
+**Not changed.** Programs that use none of these statements, and have no menus, compile to their M14 bytes (tools/diffbuild.py against RC1). A program with menus gains one row in its menu table (4 bytes) for Tasks → Stop.
+
 ## 6. Statements
 
 | Statement | Semantics | Stage-1 limits (basis) |
@@ -861,7 +955,7 @@ Not in the language: `GOTO`, `INPUT`, `DATA`/`READ`, `PRINT` to the screen. (Arr
 | 3 | Two controls bound to the same variable (the frontend accepted a repeated `TEXTBOX X$`) | Compile error: one control per variable — otherwise "which control wins" would be arbitrary. `DIM` plus one control is fine. |
 | 4 | TEXTBOX size: "capacity ≤ 128 (doc)" vs. the v0.5.2 failure with larger/empty fields | Max length = capacity − 1, the full slot reserved in the definition (see ARCHITECTURE M3b), capacity ≤ 64 in M3b. |
 | 5 | Where do controls go, and in what order? (spec: fixed layout, caps "pending auto-layout") | Source-order rows with fixed heights and a fit check (§5); caps become geometric. |
-| 6 | Unsaved edits at exit | Discarded; there is no implicit sync on `EXIT`/`om_exit` (the program is ending). |
+| 6 | Unsaved edits at exit | Discarded; there is no implicit sync on `EXIT`/`om_exit` (the program is ending). M15: Tasks → Stop with `ON STOP` reads the values before the handler, as a menu handler does (§5.17). |
 | 7 | `TEXTBOX name$` vs `TEXTBOX name` | Unchanged frontend rule: any STRING variable may be bound; the `$` suffix is not required (a `$` name must be STRING, a CHECKBOX may not use one). |
 
 Open questions that only XAnne can answer are listed with the M3b scripts in `RUNTIME-RESULTS.md` (V1–V6).

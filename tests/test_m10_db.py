@@ -79,7 +79,7 @@ def run(src: str, files=None, legacy=False, **disk_options):
     """*legacy* (M14): built with --legacy-file-safety, the save and load code the owner accepted."""
     disk = z80sim.Disk(files={(F, name): data for name, data in (files or {}).items()},
                        **disk_options)
-    r = guarded_run(src, disk=disk, build_options={"legacy_file_safety": True} if legacy else None)
+    r = guarded_run(src, disk=disk, build_options={"legacy_file_safety": True, "legacy_tasks_stop": True} if legacy else None)
     assert r.violations == [], r.violations[:5]
     assert disk.open_at_exit in (None, (None, None)), disk.open_at_exit
     return r

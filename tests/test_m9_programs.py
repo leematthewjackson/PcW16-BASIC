@@ -161,7 +161,7 @@ class ArtifactTests(unittest.TestCase):
         for src, name, options in self.BUILDS:
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
                 t = Path(tmp)
-                build(ROOT / src, t / f"{name}.asm", t / f"{name}.prg", **options)
+                build(ROOT / src, t / f"{name}.asm", t / f"{name}.prg", legacy_tasks_stop=True, **options)  # M15
                 image = (t / f"{name}.prg").read_bytes()
                 self.assertEqual(image, (ROOT / "artifacts" / "m9" / f"{name}.prg").read_bytes())
                 self.assertIn(hashlib.sha256(image).hexdigest(), manifest)

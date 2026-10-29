@@ -1,0 +1,451 @@
+' M15PRB: the M15a XAnne probe (screen text, exit, canvas keys). NOT a
+' normal program: built only by xanne/m15prb_build.py, which replaces the
+' bodies of the Nat... SUBs below with hand-written Rosanne calls
+' (xanne/m15native.asm) and sends om_exit (Tasks > Stop) to SUB OnExit
+' before the program ends. The compiler and runtime are not changed.
+' docs/M15A-PROBE.md says what to press and what to write down.
+'
+' Text menu (each page is drawn on the canvas; Details shows the figures):
+'   1, 2  dialog fonts 1-6 and 7-12 (os_dialog_string 81, widths 82)
+'   3     dialog font 7: styles 0, 1, 2, 4 and alignment 0, 1, 2
+'   4     removed in r3: BIOS font 0 crashed Rosanne (docs/M15A-PROBE.md)
+'   5-9   typo fonts, one step at a time (r2, after T4 corrupted XAnne's
+'         screen): a list fonts and read the clip window (84, 119); b one
+'         10-point font in slot 0, as PAGE prints (85, 88, 87, 90); c one
+'         character (91, 93); d one line; e speed. Each step runs only if
+'         the one before it reported success.
+' Exit menu: the exit log, the delay OnExit waits, a 20 s busy loop; r4: the
+' OS messages and other menus' choices received, and a switch that passes
+' those choices to os_process_event (Tasks > Stop, docs/M15A-PROBE.md); r5:
+' the Tasks menu's own text, and a switch that treats Tasks menu title 0,
+' entry 0 as an exit request (SUB OnExit, then the program ends).
+' Files: writes and deletes M15EXIT.TXT only.
+DIM R$ AS STRING * 126
+DIM S$ AS STRING * 126
+DIM L$ AS STRING * 126
+DIM Info$ AS STRING * 24
+DIM Typed$ AS STRING * 20
+DIM T$ AS STRING * 80
+DIM Log$ AS STRING * 100
+DIM Act$ AS STRING * 30
+DIM N1$ AS STRING * 34
+DIM N2$ AS STRING * 34
+DIM N3$ AS STRING * 34
+DIM N4$ AS STRING * 34
+DIM NF AS INTEGER
+DIM NS AS INTEGER
+DIM NA AS INTEGER
+DIM NM AS INTEGER
+DIM NK AS INTEGER
+DIM NX AS INTEGER
+DIM NY AS INTEGER
+DIM NC AS INTEGER
+DIM NE AS INTEGER
+DIM NW AS INTEGER
+DIM NH AS INTEGER
+DIM ND AS INTEGER
+DIM NN AS INTEGER
+DIM NSLOT AS INTEGER
+DIM NSZ AS INTEGER
+DIM NID AS INTEGER
+DIM CW AS INTEGER
+DIM CH AS INTEGER
+DIM FID1 AS INTEGER
+DIM FID2 AS INTEGER
+DIM FID3 AS INTEGER
+DIM FID4 AS INTEGER
+DIM FST1 AS INTEGER
+DIM FST2 AS INTEGER
+DIM FST3 AS INTEGER
+DIM FST4 AS INTEGER
+DIM FFM1 AS INTEGER
+DIM FFM2 AS INTEGER
+DIM FFM3 AS INTEGER
+DIM FFM4 AS INTEGER
+DIM Page AS INTEGER
+DIM NextBios AS INTEGER
+DIM Delay AS INTEGER
+DIM T0 AS INTEGER
+DIM T1 AS INTEGER
+DIM I AS INTEGER
+DIM TA AS BOOLEAN
+DIM TB AS BOOLEAN
+DIM TC AS BOOLEAN
+DIM TD AS BOOLEAN
+DIM CX AS INTEGER
+DIM E$ AS STRING * 126
+DIM M0 AS INTEGER
+DIM M1 AS INTEGER
+DIM M2 AS INTEGER
+DIM M3 AS INTEGER
+DIM M4 AS INTEGER
+DIM M5 AS INTEGER
+DIM DN AS INTEGER
+DIM DT AS INTEGER
+DIM DEN AS INTEGER
+DIM DS AS INTEGER
+DIM StopExit AS INTEGER
+DIM ExitBy AS INTEGER
+DIM CY AS INTEGER
+
+WINDOW Main, "M15PRB", LARGE
+LABEL Info$
+TEXTBOX Typed$, "Type here; then canvas + key"
+CANVAS 560, 200, PAINT Paint, KEYS Keys
+BUTTON "Details", Details
+BUTTON "Clear", ClearPage
+BUTTON "Quit", Quit, KEY STOP
+
+MENU "Text"
+    ITEM "1 Dialog fonts 1-6", Page1
+    ITEM "2 Dialog fonts 7-12", Page2
+    ITEM "3 Styles, alignment", Page3
+    ITEM "5 Typo a: list", Page5
+    ITEM "6 Typo b: 10 pt", Page6
+    ITEM "7 Typo c: one A", Page7
+    ITEM "8 Typo d: one line", Page8
+    ITEM "9 Typo e: speed", Page9
+END MENU
+MENU "Exit"
+    ITEM "Show exit log", ShowLog
+    ITEM "Exit delay 0 s", Delay0
+    ITEM "Exit delay 3 s", Delay3
+    ITEM "Exit delay 10 s", Delay10
+    ITEM "Busy 20 s", Busy
+    ITEM "Show events", ShowEvents
+    ITEM "Show Tasks menu", ShowTasks
+    ITEM "Tasks 0/0 exits", StopExits
+END MENU
+
+' ---- the native routines (bodies replaced by m15prb_build.py)
+SUB NatDlg
+    NC = 0
+END SUB
+SUB NatTypoList
+    NC = 0
+END SUB
+SUB NatTypoDef
+    NC = 0
+END SUB
+SUB NatTypoDraw
+    NC = 0
+END SUB
+SUB NatClipGet
+    NC = 0
+END SUB
+SUB NatEvents
+    NC = 0
+END SUB
+SUB NatTasks
+    NC = 0
+END SUB
+
+' ---- exit (om_exit reaches this SUB before the program ends)
+SUB OnExit
+    T0 = CLOCKTICKS
+    WHILE CLOCKTICKS - T0 < Delay * 16
+    WEND
+    OPEN "M15EXIT.TXT" FOR OUTPUT AS #1
+    PRINT #1, "exit via " + STR$(ExitBy) + " (0 om_exit, 1 Tasks 0/0), waited " + STR$(Delay) + " s, last: " + Act$
+    CLOSE #1
+END SUB
+
+SUB ShowLog
+    MESSAGE Log$
+END SUB
+
+SUB Delay0
+    Delay = 0
+    Info$ = "exit delay 0 s"
+END SUB
+
+SUB Delay3
+    Delay = 3
+    Info$ = "exit delay 3 s"
+END SUB
+
+SUB Delay10
+    Delay = 10
+    Info$ = "exit delay 10 s"
+END SUB
+
+SUB ShowEvents
+    CALL NatEvents
+    E$ = "OS messages by id: 1:" + STR$(M1) + " 2:" + STR$(M2) + " 3:" + STR$(M3) + " 4:" + STR$(M4) + " 5 (om_exit):" + STR$(M5) + " other:" + STR$(M0)
+    E$ = E$ + "; other menus: " + STR$(DN) + ", last " + STR$(DT) + "/" + STR$(DEN) + "/" + STR$(DS) + "; 0/0 exits " + STR$(StopExit)
+    MESSAGE E$
+END SUB
+
+SUB ShowTasks
+    CALL NatTasks
+    MESSAGE E$
+END SUB
+
+SUB StopExits
+    StopExit = 1 - StopExit
+    Info$ = "Tasks 0/0 exits: " + STR$(StopExit)
+END SUB
+
+SUB Busy
+    Act$ = "busy started"
+    T0 = CLOCKTICKS
+    WHILE CLOCKTICKS - T0 < 320
+    WEND
+    Act$ = "busy finished"
+    Info$ = "busy finished"
+END SUB
+
+' ---- canvas keys (KI-87, KI-6)
+SUB Keys
+    Info$ = "canvas key " + STR$(KEYCODE)
+END SUB
+
+SUB Details
+    IF LEN(R$) = 0 THEN
+        MESSAGE "No figures yet: choose a Text page first"
+        EXIT SUB
+    END IF
+    MESSAGE R$
+    IF TA THEN
+        MESSAGE S$
+        MESSAGE L$
+    END IF
+END SUB
+
+SUB ClearPage
+    Page = 0
+    NextBios = 0
+    DRAW CLEAR
+    Info$ = "cleared"
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+
+' ---- pages
+SUB Tick(Y AS INTEGER)
+    DRAW LINE 0, Y, 2, Y
+END SUB
+
+SUB Dlg(F AS INTEGER, S AS INTEGER, A AS INTEGER, X AS INTEGER, Y AS INTEGER)
+    NF = F
+    NS = S
+    NA = A
+    NX = X
+    NY = Y
+    CALL Tick(Y)
+    CALL NatDlg
+    R$ = R$ + STR$(F) + ":" + STR$(NC) + "/" + STR$(NW) + "/" + STR$(NE) + " "
+END SUB
+
+SUB Fonts(First AS INTEGER)
+    LOCAL F AS INTEGER
+    R$ = "font:carry/width of WWWWWWWWWW/carry "
+    FOR F = First TO First + 5
+        T$ = "Font " + STR$(F) + ": AaBbQqWw 0123 jy"
+        CALL Dlg(F, 0, 0, 6, (F - First) * 32 + 2)
+    NEXT F
+    Info$ = "page " + STR$(Page) + " drawn"
+END SUB
+
+SUB Styles
+    R$ = "style/align:carry/width "
+    T$ = "Style 0: AaBbWw"
+    CALL Dlg(7, 0, 0, 6, 2)
+    T$ = "Style 1: AaBbWw"
+    CALL Dlg(7, 1, 0, 6, 26)
+    T$ = "Style 2: AaBbWw"
+    CALL Dlg(7, 2, 0, 6, 50)
+    T$ = "Style 4: AaBbWw"
+    CALL Dlg(7, 4, 0, 6, 74)
+    DRAW LINE 280, 100, 280, 196
+    T$ = "align 0"
+    CALL Dlg(7, 0, 0, 280, 104)
+    T$ = "align 1"
+    CALL Dlg(7, 0, 1, 280, 136)
+    T$ = "align 2"
+    CALL Dlg(7, 0, 2, 280, 168)
+    Info$ = "page 3 drawn"
+END SUB
+
+SUB TypoRow(Style AS INTEGER, K AS INTEGER, X AS INTEGER, Y AS INTEGER)
+    NSLOT = 0
+    NS = Style
+    NK = K
+    NX = X
+    NY = Y
+    NM = 0
+    CALL Tick(Y)
+    CALL NatTypoDraw
+    R$ = R$ + STR$(NC) + "/" + STR$(NE) + "/" + STR$(NW) + " "
+END SUB
+
+' a: init, the font list and the clipping window (read only)
+SUB TypoA
+    CALL NatTypoList
+    NID = FID1
+    IF FFM2 = 2 THEN
+        NID = FID2
+    END IF
+    IF FFM3 = 2 THEN
+        NID = FID3
+    END IF
+    IF FFM1 = 2 THEN
+        NID = FID1
+    END IF
+    CALL NatClipGet
+    S$ = "init " + STR$(NC) + ", fonts " + STR$(NN) + ", ID " + STR$(NID) + "; clip " + STR$(CX) + "," + STR$(CY) + "," + STR$(CW) + "," + STR$(CH)
+    L$ = "1:" + STR$(FID1) + "/" + STR$(FST1) + "/" + STR$(FFM1) + " " + LEFT$(N1$, 14)
+    L$ = L$ + "; 2:" + STR$(FID2) + "/" + STR$(FST2) + "/" + STR$(FFM2) + " " + LEFT$(N2$, 14)
+    L$ = L$ + "; 3:" + STR$(FID3) + "/" + STR$(FST3) + "/" + STR$(FFM3) + " " + LEFT$(N3$, 14)
+    L$ = L$ + "; 4:" + STR$(FID4) + "/" + STR$(FST4) + "/" + STR$(FFM4) + " " + LEFT$(N4$, 14)
+    TA = NC = 0 AND NN > 0
+    R$ = S$
+    Info$ = "typo a done"
+END SUB
+
+' b: slot 0 at 10 points (PAGE's own sequence)
+SUB TypoB
+    IF NOT TA THEN
+        Info$ = "do typo a first"
+        EXIT SUB
+    END IF
+    NSLOT = 0
+    NSZ = 10
+    CALL NatTypoDef
+    R$ = "b slot 0, 10 pt: select " + STR$(NC) + ", def " + STR$(NE) + "; pitch " + STR$(NW) + ", ascender " + STR$(NH) + ", descender " + STR$(ND)
+    TB = NE = 0
+    Info$ = "typo b done"
+END SUB
+
+' c: one character, A, at 100, 100 (the tick marks y)
+SUB TypoC
+    IF NOT TB THEN
+        Info$ = "do typo b first"
+        EXIT SUB
+    END IF
+    R$ = "c one A: select/code/advance "
+    T$ = "A"
+    CALL TypoRow(0, 25, 100, 100)
+    TC = NC = 0 AND NE = 0
+    Info$ = "typo c done"
+END SUB
+
+' d: one line, at two scales, bold and italic
+SUB TypoD
+    IF NOT TC THEN
+        Info$ = "do typo c first"
+        EXIT SUB
+    END IF
+    R$ = "d rows: select/code/advance "
+    T$ = "Hamburgefonts 10 pt, 1/25"
+    CALL TypoRow(0, 25, 6, 30)
+    T$ = "Hamburgefonts 10 pt, 1/20"
+    CALL TypoRow(0, 20, 6, 60)
+    T$ = "Bold 10 pt"
+    CALL TypoRow(1, 25, 6, 90)
+    T$ = "Italic 10 pt"
+    CALL TypoRow(2, 25, 200, 90)
+    TD = NE = 0
+    Info$ = "typo d done"
+END SUB
+
+' e: 8 lines with typo, 8 with DRAW TEXT
+SUB TypoE
+    IF NOT TD THEN
+        Info$ = "do typo d first"
+        EXIT SUB
+    END IF
+    T$ = "The quick brown fox jumps over the dog"
+    T0 = CLOCKTICKS
+    FOR I = 0 TO 7
+        NSLOT = 0
+        NS = 0
+        NK = 25
+        NX = 6
+        NY = I * 12 + 24
+        NM = 0
+        CALL NatTypoDraw
+    NEXT I
+    T1 = CLOCKTICKS - T0
+    T0 = CLOCKTICKS
+    FOR I = 0 TO 4
+        DRAW TEXT 6, I * 16 + 120, T$
+    NEXT I
+    R$ = "8 typo lines " + STR$(T1) + "/16 s (code " + STR$(NE) + "); 5 DRAW TEXT lines " + STR$(CLOCKTICKS - T0) + "/16 s"
+    Info$ = "typo e done"
+END SUB
+
+SUB DrawPage
+    SELECT CASE Page
+    CASE 1
+        CALL Fonts(1)
+    CASE 2
+        CALL Fonts(7)
+    CASE 3
+        CALL Styles
+    END SELECT
+END SUB
+
+SUB Show(P AS INTEGER)
+    Page = P
+    DRAW CLEAR
+    CALL DrawPage
+END SUB
+
+SUB Paint
+    CALL DrawPage  ' the typo steps are not redrawn: each runs once, when chosen
+END SUB
+
+SUB Page1
+    CALL Show(1)
+END SUB
+
+SUB Page2
+    CALL Show(2)
+END SUB
+
+SUB Page3
+    CALL Show(3)
+END SUB
+
+SUB Page5
+    CALL TypoA
+END SUB
+
+SUB Page6
+    CALL TypoB
+END SUB
+
+SUB Page7
+    Page = 0
+    DRAW CLEAR
+    CALL TypoC
+END SUB
+
+SUB Page8
+    Page = 0
+    DRAW CLEAR
+    CALL TypoD
+END SUB
+
+SUB Page9
+    Page = 0
+    DRAW CLEAR
+    CALL TypoE
+END SUB
+
+' ---- start: the log of the last exit, then delete it
+Act$ = "started"
+Log$ = "no exit log (M15EXIT.TXT not found)"
+OPEN "M15EXIT.TXT" FOR INPUT AS #1
+IF IOERR = 0 THEN
+    LINE INPUT #1, Log$
+    CLOSE #1
+    KILL "M15EXIT.TXT"
+    Info$ = "exit log found: see Exit"
+ELSE
+    Info$ = "no exit log"
+END IF
+END

@@ -81,7 +81,7 @@ class RegionTableTests(unittest.TestCase):
     def test_contacts3(self):
         path = ROOT / "examples" / "contacts3.pbas"
         run = guarded_run(path.read_text(encoding="utf-8"), events=[], path=path, disk=z80sim.Disk(),
-                          build_options={"legacy_file_safety": True})  # M14 (KI-100): as accepted
+                          build_options={"legacy_file_safety": True, "legacy_tasks_stop": True})  # M14 (KI-100): as accepted
         self.assertEqual(run.violations, [])
         self.check_same_as_search(run)
 
@@ -188,7 +188,7 @@ def lockstep_cases():
             ("click", o["Speed"]), ("click", o["Quit"])]),
         "contacts3": dict(source=contacts.read_text(encoding="utf-8"), path=contacts,
                           disk=z80sim.Disk(files={(F, "CONTACTS.PDB"): tc.DATA}), max_steps=tc.STEPS,
-                          build_options={"legacy_file_safety": True},  # M14 (KI-100): as accepted
+                          build_options={"legacy_file_safety": True, "legacy_tasks_stop": True},  # M14 (KI-100): as accepted
                           events=[("click", tc.b("MAIN", "Sort")), ("click", tc.b("MAIN", "Find...")),
                                   ("edit", tc.b("FINDER", "FINDTEXT$"), "ann"),
                                   ("click", tc.b("FINDER", "In names")), tc.SAVE, tc.QUIT]),

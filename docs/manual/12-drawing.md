@@ -16,14 +16,16 @@ Contents: [CANVAS](#canvas) · [Coordinates and no clipping](#coordinates-and-no
 [The PAINT handler](#paint-handler) · [DRAW CLEAR](#draw-clear) · [DRAW FILL and shades](#draw-fill-and-shades) ·
 [DRAW INVERT](#draw-invert) · [DRAW BOX](#draw-box) · [DRAW LINE](#draw-line) ·
 [DRAW PIXEL](#draw-pixel) · [DRAW INK](#draw-ink) · [DRAW TEXT and TEXTWIDTH](#draw-text-and-textwidth) ·
-[DRAW SCROLL](#draw-scroll) · [POINT](#point) · [What is not available](#what-is-not-available)
+[DRAW SCROLL](#draw-scroll) · [POINT](#point) · [DRAW FONT and ALIGN](#draw-font-and-align) ·
+[Scalable type](#scalable-type-type-font-and-draw-type) · [Several canvases](#several-canvases-draw-on) ·
+[What is not available](#what-is-not-available)
 
 ## CANVAS
 
 **Syntax**
 
 ```text
-CANVAS width, height [, PAINT P] [, MOUSE M] [, KEYS K]
+CANVAS [Name,] width, height [, PAINT P] [, MOUSE M] [, KEYS K]
 ```
 
 **Meaning.** Adds a white drawing area with a 1-pixel black frame to the current window, as a
@@ -32,7 +34,8 @@ integer literals. `P`, `M` and `K` are `SUB`s without parameters: `PAINT` draws 
 (below), `MOUSE` and `KEYS` receive input ([chapter 11](11-menus-keys-mouse.md)). The clauses may
 come in any order.
 
-**Requires.** A `WINDOW`. One canvas per program.
+**Requires.** A `WINDOW`. A program may have up to 8 canvases; with more than one, each needs a name
+([Several canvases](#several-canvases-draw-on)).
 
 **Example**
 
@@ -95,7 +98,7 @@ END
 ```
 
 ```pbas-error
-' expect-error: a program may have one CANVAS
+' expect-error: with more than one CANVAS each needs a name
 WINDOW "Two"
 CANVAS 100, 40
 CANVAS 100, 40
@@ -118,8 +121,8 @@ END
 
 **Limits.** Width 16 to 568 and height 16 to 300; at most 330 wide in a normal window and 568
 in a `LARGE` one; the height must fit the layout (see
-[chapter 10](10-windows-and-controls.md#layout-rows-and-limits)). One canvas per program, so with
-named windows only one of them has it. `CANVAS` and `DRAW` are statement words only at the start
+[chapter 10](10-windows-and-controls.md#layout-rows-and-limits)). Up to 8 canvases in a program, in
+any of its windows. `CANVAS` and `DRAW` are statement words only at the start
 of a statement, so you may still use them as names.
 
 *Evidence:* tested in XAnne (`../../developer-tests/gfxprobe.pbas`, `gfxbench.pbas`, `uibench.pbas` and
@@ -217,7 +220,15 @@ picture changes. Handlers may also draw directly, as the mouse example in
 A handler that runs `SHOW` for the canvas's window must not draw after the `SHOW`: the window
 opens only when the handler returns (known issue KI-59, [limitations](../limitations.md)).
 
-*Evidence:* tested in XAnne.
+**The runtime keeps no copy of what is drawn.** When PAINT runs again (after an alert, or when a
+window opens again), it starts from whatever is on the screen, and a canvas's earlier drawing may
+be gone. So whatever the program wants kept, strokes included, must be in its variables, and PAINT
+must draw it all back. Freehand drawing that a MOUSE handler draws directly is lost unless the
+handler also stores it: `examples/sketchpad.pbas` keeps its last 250 dots in arrays, and PAINT II
+keeps its picture in a BITMAP. This holds for every canvas of a program with several.
+
+*Evidence:* tested in XAnne (including M15c C5 and r2 R6: a drawing PAINT does not store is lost
+after an alert; one it stores comes back).
 
 ## DRAW CLEAR
 
@@ -435,7 +446,8 @@ END
 `Runtime error: a text cell is 11 to 64 pixels at line N`. Text whose 16-pixel line does not fit
 below y is drawing outside the canvas.
 
-**Limits.** One font, one size; no bold or italic on screen.
+**Limits.** Font 7 unless [DRAW FONT](#draw-font-and-align) chooses another; scalable sizes, bold and
+italic are [DRAW TYPE](#scalable-type-type-font-and-draw-type)'s.
 
 *Evidence:* `DRAW TEXT` tested in XAnne (`../../developer-tests/gfxprobe.pbas`); `TEXTWIDTH` tested in
 XAnne (`../../developer-tests/rendprb.pbas`: eight strings, each width matching its drawn text); the cell
@@ -530,16 +542,209 @@ END
 
 *Evidence:* tested in XAnne (`../../developer-tests/bmpprb.pbas`: 7,216 reads in 2 seconds).
 
+## DRAW FONT and ALIGN
+
+**Syntax**
+
+```text
+DRAW FONT n                          n 1..12: the dialog font of later DRAW TEXT and TEXTWIDTH
+DRAW TEXT x, y, text$ ALIGN LEFT     (or CENTRE, CENTER, RIGHT): text placed about x
+```
+
+**Meaning.** Rosanne has twelve dialog fonts. Font 7 is the one windows use, and the default.
+
+`DRAW FONT n` chooses the font for the `DRAW TEXT` and `TEXTWIDTH` that follow. In a program that uses `DRAW FONT`:
+- `DRAW TEXT` measures the text and cuts it at the last whole character before the right edge;
+- programs without `DRAW FONT` keep the 11-pixel rule above.
+
+There are no styles. The fonts' line heights are not yet measured, so leave room by eye; a 16-pixel line must still fit below y.
+
+`ALIGN CENTRE` centres the text on x, and `ALIGN RIGHT` ends it at x. It is never placed left of the canvas's left edge. `ALIGN LEFT` is the ordinary `DRAW TEXT`.
+
+**Example**
+
+```pbas
+DIM N AS INTEGER
+
+WINDOW "Fonts", LARGE
+CANVAS 400, 200, PAINT Paint
+BUTTON "Quit", Quit
+
+SUB Paint
+    DRAW CLEAR
+    FOR N = 1 TO 6
+        DRAW FONT N * 2
+        DRAW TEXT 200, N * 30 - 26, "Font " + STR$(N * 2) ALIGN CENTRE
+    NEXT N
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+END
+```
+
+**Common errors.** `DRAW FONT 0` or `13` stops the program: `Runtime error: a font is 1 to 12 at line N`.
+`ALIGN` with a cell width is a compile error.
+
+*Evidence:*
+- tested in XAnne (M15a; M15c F1–F5; r2 R1): all twelve fonts, `TEXTWIDTH` in each, the measured cut at the right frame (fonts 11 and 12 included) and `ALIGN`;
+- the fonts' line heights are not measured, so there is no `TEXTHEIGHT` (known issue KI-106); fonts 11 and 12 have unusual glyphs of Rosanne's own;
+- `examples/fontbook.pbas` shows every font with its widths.
+
+## Scalable type: TYPE FONT and DRAW TYPE
+
+**Syntax**
+
+```text
+TYPE FONT SWISS | TIMES, size [, BOLD] [, ITALIC]   size 6, 8, 10, 11, 12, 14, 18, 24, 36 or 72
+DRAW TYPE x, y, text$                               the text in that font, its top-left at x, y
+TYPEWIDTH(text$)                                    INTEGER: its width in pixels
+TYPEHEIGHT                                          INTEGER: the line's height in pixels
+```
+
+**Meaning.** The same scalable fonts `PAGE` prints with ([chapter 15](15-printing.md)), drawn on the canvas.
+- Without `TYPE FONT`, Times 10 is used.
+- `DRAW INK XOR` draws the text in XOR; otherwise it is black on white.
+- The whole line (`TYPEHEIGHT`) must fit below y.
+- The text is cut before the first character that would pass the right edge.
+- Printing and screen type may be mixed in any order.
+
+**Example**
+
+```pbas
+WINDOW "Type", LARGE
+CANVAS 400, 120, PAINT Paint
+BUTTON "Quit", Quit
+
+SUB Paint
+    DRAW CLEAR
+    TYPE FONT SWISS, 10
+    DRAW TYPE 10, 10, "Swiss at 10 points"
+    TYPE FONT TIMES, 10, BOLD, ITALIC
+    DRAW TYPE 10, 10 + TYPEHEIGHT + 4, "Times, bold and italic"
+    DRAW LINE 10, 40, 10 + TYPEWIDTH("Times, bold and italic"), 40
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+END
+```
+
+**Common errors.**
+- A size not in the list is a compile error for a literal, and otherwise stops the program: `Runtime error: a type size is 6, 8, 10, 11, 12, 14, 18, 24, 36 or 72 at line N`.
+- A line that does not fit below y is drawing outside the canvas.
+
+*Evidence:*
+- Tested in XAnne (M15a, M15c and its r2 retest): every size from 6 to 72 points, Times, bold and italic, `TYPEWIDTH` and `TYPEHEIGHT` against the drawing, the top-left placement, the right-edge cut (italic keeps a quarter of its ascender free), and printing in the same program (provisionally, printed to PDF).
+- The speed of type is not measured.
+- `examples/m15_specimen.pbas` shows every size.
+
+## Several canvases: DRAW ON
+
+**Syntax**
+
+```text
+CANVAS Name, width, height [, PAINT P] [, MOUSE M] [, KEYS K]
+DRAW ON Name          later DRAW statements draw on Name
+FOCUS Name            keys go to the canvas Name
+```
+
+**Meaning.** A program may have up to 8 canvases, each named, in any of its windows.
+- **One canvas or several.** A program with one canvas may leave it unnamed (`CANVAS width, height, …`) and needs no `DRAW ON`: everything draws on it, exactly as before M15, with the same code. As soon as a program has two canvases, every one must be named, and the program carries a small table of its canvases.
+- `DRAW ON` chooses the canvas that later drawing goes to. The first canvas is chosen at the start.
+- While a canvas's own `PAINT`, `MOUSE` or `KEYS` handler runs, drawing goes to that canvas. After every handler, the `DRAW ON` choice applies again.
+- Each canvas keeps its own `DRAW FONT` and `TYPE FONT`.
+- When a window opens, each of its canvases' `PAINT` runs, in source order.
+- A press goes to the canvas under the pointer and gives it the keyboard; the drag and the release go to the canvas pressed.
+- `FOCUS Name` gives a canvas the keyboard without a click.
+
+**Example**
+
+```pbas
+DIM Shade AS INTEGER
+DIM DX(100) AS INTEGER
+DIM DY(100) AS INTEGER
+DIM DS(100) AS INTEGER
+DIM Dots AS INTEGER
+DIM N AS INTEGER
+
+WINDOW "Two canvases", LARGE
+CANVAS Strip, 400, 30, PAINT StripPaint, MOUSE StripMouse
+CANVAS Board, 400, 150, PAINT BoardPaint, MOUSE BoardMouse
+BUTTON "Clear", Clear
+BUTTON "Quit", Quit
+
+SUB StripPaint
+    DRAW CLEAR
+    DRAW FILL 0, 0, 50, 30, Shade
+END SUB
+
+SUB StripMouse
+    IF MOUSEEVENT = 1 THEN
+        Shade = (Shade + 1) MOD 8
+        CALL StripPaint
+    END IF
+END SUB
+
+SUB BoardPaint
+    DRAW CLEAR
+    FOR N = 1 TO Dots
+        DRAW FILL DX(N), DY(N), 4, 4, DS(N)
+    NEXT N
+END SUB
+
+SUB BoardMouse
+    IF MOUSEX >= 0 AND MOUSEX < 396 AND MOUSEY >= 0 AND MOUSEY < 146 THEN
+        DRAW FILL MOUSEX, MOUSEY, 4, 4, Shade
+        IF Dots < 100 THEN
+            Dots = Dots + 1
+            DX(Dots) = MOUSEX
+            DY(Dots) = MOUSEY
+            DS(Dots) = Shade
+        END IF
+    END IF
+END SUB
+
+SUB Clear
+    Dots = 0
+    DRAW ON Board
+    CALL BoardPaint
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+END
+```
+
+```pbas-error
+' expect-error: no CANVAS NOWHERE is declared
+WINDOW "One"
+CANVAS Board, 100, 40
+BUTTON "Quit", Q
+SUB Q
+    DRAW ON Nowhere
+END SUB
+END
+```
+
+The Board stores each square it draws, so its PAINT can draw them back after an alert; `Clear`, a button's handler, uses `DRAW ON` to draw on the Board. `examples/sketchpad.pbas` is a fuller version, with keys and `FOCUS`.
+
+**Limits.** Each canvas takes a row of its window, so a window holds only as many as its height allows.
+
+*Evidence:* tested in XAnne (M15c C1–C7, r2 R6): presses, drags that stay with the canvas pressed, keys, `FOCUS` without a click, repaint after an alert, and a canvas in a second window.
+
 ## What is not available
 
 There is no statement for: circles, arcs or ellipses; flood fill; polygons; patterned lines;
-clipping rectangles (clip yourself, above); other fonts, sizes or styles; colour; more than one
-canvas; reading or setting a pixel inside a BITMAP without the canvas (known issue KI-88).
+clipping rectangles (clip yourself, above); styles for the dialog fonts; colour; reading or setting a pixel inside a BITMAP without the canvas (known issue KI-88).
 Other BASICs' `PSET`, `LINE (x1,y1)-(x2,y2)`, `CIRCLE`, `PAINT`, `SCREEN` and `COLOR` are
 refused:
 
 ```pbas-error
-' expect-error: expected CLEAR, FILL, INVERT, BOX, LINE, PIXEL, TEXT, SCROLL or INK after DRAW, got CIRCLE
+' expect-error: expected CLEAR, FILL, INVERT, BOX, LINE, PIXEL, TEXT, SCROLL, INK, FONT, TYPE or ON after DRAW, got CIRCLE
 WINDOW "Circle"
 CANVAS 100, 50
 BUTTON "Quit", Q

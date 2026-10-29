@@ -249,7 +249,8 @@ class Candidate2Tests(unittest.TestCase):
         art = EXAMPLES.parent / "artifacts" / "m14-rc2"
         listed = (art / "MANIFEST.md").read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as tmp:
-            made = package.build_programs(Path(tmp), EXAMPLES.parent, programs=package.CORRECTED)
+            made = package.build_programs(Path(tmp), EXAMPLES.parent, programs=package.CORRECTED,
+                                          legacy_stop=True)  # M15: as built for session H
             self.assertEqual(sorted(n for n, _ in made), sorted(p.name for p in art.iterdir() if p.name != "MANIFEST.md"))
             for name, _ in made:
                 data = (Path(tmp) / name).read_bytes()

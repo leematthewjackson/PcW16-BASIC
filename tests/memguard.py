@@ -78,10 +78,15 @@ class GuardedRun:
 def _runtime_objects() -> dict[str, int]:
     """``label:`` followed by ``defs N`` in the runtime source -> size N."""
     text = RUNTIME.read_text(encoding="utf-8")
-    return {
+    cells = {
         m.group(1).lower(): int(m.group(2))
         for m in re.finditer(r"^(\w+):\s*\n\s+defs\s+(\d+)\s*$", text, re.M)
     }
+    # M15: a variable with a starting value, ``label:`` then ``db N ; ...``
+    # (DRAW FONT's font, 7 until changed), is one byte of storage too.
+    cells.update((m.group(1).lower(), 1) for m in re.finditer(
+        r"^(rt_dw_\w+):\s*\n\s+db\s+\d+\s*(;.*)?$", text, re.M))
+    return cells
 
 
 def _symbols(asm: Path, tmp: Path) -> dict[str, int]:
@@ -205,6 +210,8 @@ def guarded_run(
         tables += re.findall(r"^(cgbank_w\w*): defs (\d+)$", asm.read_text(encoding="utf-8"), re.M)
         # M10: a database's next-identifier cell (program data)
         tables += re.findall(r"^(cgdbid_\w+): defs (\d+)$", asm.read_text(encoding="utf-8"), re.M)
+        # M15: with several canvases, the current canvas's working copy
+        tables += re.findall(r"^(cgcanvas): defs (\d+)$", asm.read_text(encoding="utf-8"), re.M)
         # M11: the program's runtime switches; with a runtime bank, a routine
         # called only from inside the bank has no resident symbol
         switches = {m.group(1) for m in re.finditer(r"^PB_(\w+) equ ([1-9]\d*)\s*$",

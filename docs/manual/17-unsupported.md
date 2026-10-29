@@ -96,7 +96,7 @@ See chapters [2](02-variables-and-types.md) to [5](05-procedures.md).
 | `DATE$` / `TIME$` | `undefined variable DATE$` | `SECONDS` gives the seconds within the hour; there is no date |
 | `PSET` | `expected ), got ,` | `DRAW PIXEL x, y` on a canvas |
 | `LINE (x,y)-(x,y)` | `expected ), got ,` | `DRAW LINE x1, y1, x2, y2`; `DRAW BOX` for rectangles |
-| `DRAW CIRCLE` and other shapes | `expected CLEAR, FILL, INVERT, BOX, LINE, PIXEL, TEXT, SCROLL or INK after DRAW, got CIRCLE` | draw with `DRAW LINE`/`DRAW PIXEL`, or `BITMAP PUT` a prepared picture |
+| `DRAW CIRCLE` and other shapes | `expected CLEAR, FILL, INVERT, BOX, LINE, PIXEL, TEXT, SCROLL, INK, FONT, TYPE or ON after DRAW, got CIRCLE` | draw with `DRAW LINE`/`DRAW PIXEL`, or `BITMAP PUT` a prepared picture |
 | `INPUT #` | `expected =, got #` | `LINE INPUT #1, A$`, then take the line apart |
 | `WRITE #` | `expected =, got #` | `PRINT #1, value`, one value a line |
 | `OPEN … FOR APPEND` / `RANDOM` | `APPEND and RANDOM are not available on the floppy` | copy to a new file with the extra lines, then swap it in ([chapter 6](06-files.md#69-safe-file-handling)) |
@@ -106,7 +106,8 @@ See chapters [2](02-variables-and-types.md) to [5](05-procedures.md).
 Not defined at all (no statement exists, so there is nothing to misspell):
 several windows on screen at once, windows created at run time, a raw
 keyboard outside a canvas, the right or middle mouse button, double-clicks,
-colour, other fonts (the canvas has one text font, printing uses Times),
+colour, fonts other than Rosanne's (the canvas has its twelve dialog fonts and
+scalable Swiss and Times, [chapter 12](12-drawing.md)),
 circles, arcs, flood fill and clipping, setting or reading one pixel inside a
 BITMAP, scaling and rotation, pictures and sloped lines on printed pages,
 landscape printing, folders chosen at run time, and the flash drive. See
@@ -770,7 +771,7 @@ END
 `DRAW CIRCLE` and other shapes:
 
 ```pbas-error
-' expect-error: expected CLEAR, FILL, INVERT, BOX, LINE, PIXEL, TEXT, SCROLL or INK after DRAW, got CIRCLE
+' expect-error: expected CLEAR, FILL, INVERT, BOX, LINE, PIXEL, TEXT, SCROLL, INK, FONT, TYPE or ON after DRAW, got CIRCLE
 WINDOW "W"
 CANVAS 100, 100
 BUTTON "Quit", Quit

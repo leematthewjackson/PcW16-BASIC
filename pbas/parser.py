@@ -64,6 +64,7 @@ from .ast_nodes import (
     TextOp,
     BitmapOp,
     PageOp,
+    TypeFont,
     Case,
     CaseItem,
     Const,
@@ -88,6 +89,7 @@ from .ast_nodes import (
     TypeDef,
     TypeField,
     Timer,
+    OnStop,
     TimerSwitch,
     Unary,
     Var,
@@ -121,6 +123,7 @@ _DECLARATIONS = {
     Numberbox: 'NUMBERBOX',
     Menu: 'MENU',
     Timer: 'TIMER',
+    OnStop: 'ON STOP',  # M15
     ListCtl: 'LIST/CHOICE',  # M6 Phase 2
     Slider: 'SLIDER',
     Canvas: 'CANVAS',  # M9
@@ -128,7 +131,9 @@ _DECLARATIONS = {
 }
 # M9: DRAW operations and how many arguments each takes.
 DRAW_ARITY = {'CLEAR': (0,), 'FILL': (4, 5), 'INVERT': (4,), 'BOX': (4,), 'LINE': (4,),
-              'PIXEL': (2,), 'TEXT': (3, 4), 'SCROLL': (6,), 'INK': (0,)}  # M11: TEXT ..., cell
+              'PIXEL': (2,), 'TEXT': (3, 4), 'SCROLL': (6,), 'INK': (0,),  # M11: TEXT ..., cell
+              'FONT': (1,), 'TYPE': (3,), 'ON': (0,)}  # M15: DRAW FONT n, TYPE x, y, text$, ON Name
+DRAW_ALIGNS = ('LEFT', 'CENTRE', 'CENTER', 'RIGHT')  # M15: DRAW TEXT x, y, t$ ALIGN ...
 DRAW_INKS = ('BLACK', 'WHITE', 'XOR')
 # M9 Stage C: TEXT operations and how many arguments follow the buffer.
 TEXT_ARITY = {'LOAD': 1, 'SAVE': 1, 'CLEAR': 0, 'INSERT': 3, 'DELETE': 3, 'SPLIT': 2, 'JOIN': 1,
@@ -334,6 +339,27 @@ class Parser:
         self.expect('NEWLINE')
         return node
 
+    def _type_font(self, token) -> Stmt:
+        """M15 TYPE FONT SWISS | TIMES, size [, BOLD] [, ITALIC] (LANGUAGE-SPEC 5.6)."""
+        self.pop()  # FONT
+        family = self.expect('IDENT')
+        if family.value.upper() not in ('SWISS', 'TIMES'):
+            raise SourceError(family.line, family.column,
+                              f'TYPE FONT is SWISS or TIMES, then the size; got {family.value}')
+        self.expect('OP', ',')
+        node = TypeFont(token.line, token.column, family.value.upper(), self.expression())
+        while self.accept('OP', ','):
+            word = self.expect('IDENT')
+            upper = word.value.upper()
+            if upper == 'BOLD' and not node.bold and not node.italic:
+                node.bold = True
+            elif upper == 'ITALIC' and not node.italic:
+                node.italic = True
+            else:
+                raise SourceError(word.line, word.column,
+                                  f'TYPE FONT takes BOLD, then ITALIC, after the size; got {word.value}')
+        return node
+
     def statement(self) -> Stmt:
         """Parse one statement; the terminating NEWLINE is consumed."""
         token = self.pop()
@@ -346,6 +372,9 @@ class Parser:
             kind = token.value.upper()  # M6 contextual statement word
         elif kind == 'IDENT' and self._file_statement(token.value.upper()):
             kind = 'M7FILE:' + token.value.upper()  # M7 file statement word
+        elif (kind == 'IDENT' and token.value.upper() == 'ON' and self.cur().kind == 'IDENT'
+              and self.cur().value.upper() == 'STOP'):
+            kind = 'ON STOP'  # M15: ON is a statement word only before STOP
         if kind == 'WINDOW':
             name = None
             following = self.ts[self.i + 1] if self.i + 1 < len(self.ts) else None
@@ -480,10 +509,16 @@ class Parser:
                 seen.add('CHANGE')
                 node.change = self.expect('IDENT').value.upper()
         elif kind == 'CANVAS':  # M9
+            name = None
+            following = self.ts[self.i + 1] if self.i + 1 < len(self.ts) else None
+            if (self.cur().kind == 'IDENT' and following is not None
+                    and following.kind == 'OP' and following.value == ','):
+                name = self.pop().value.upper()  # M15: CANVAS Name, width, height
+                self.expect('OP', ',')
             width = self._int_literal()
             self.expect('OP', ',')
             height = self._int_literal()
-            node = Canvas(token.line, token.column, width, height)
+            node = Canvas(token.line, token.column, width, height, name=name)
             while self.accept('OP', ','):
                 word = self.expect('IDENT')
                 upper = word.value.upper()
@@ -492,12 +527,12 @@ class Parser:
                                       f'expected PAINT, MOUSE or KEYS (each at most once), got {word.value}')
                 setattr(node, upper.lower(), self.expect('IDENT').value.upper())
         elif kind == 'DRAW':  # M9
-            word = self.expect('IDENT')
+            word = self.pop() if self.cur().kind == 'TYPE' else self.expect('IDENT')  # M15: DRAW TYPE
             op = word.value.upper()
             if op not in DRAW_ARITY:
                 raise SourceError(word.line, word.column,
-                                  'expected CLEAR, FILL, INVERT, BOX, LINE, PIXEL, TEXT, SCROLL '
-                                  f'or INK after DRAW, got {word.value}')
+                                  'expected CLEAR, FILL, INVERT, BOX, LINE, PIXEL, TEXT, SCROLL, '
+                                  f'INK, FONT, TYPE or ON after DRAW, got {word.value}')
             node = Draw(token.line, token.column, op)
             if op == 'INK':
                 ink = self.pop()  # XOR is an operator token (M7), BLACK / WHITE identifiers
@@ -505,10 +540,21 @@ class Parser:
                     raise SourceError(ink.line, ink.column,
                                       f'DRAW INK is BLACK, WHITE or XOR, got {ink.value}')
                 node.ink = ink.value.upper()
+            elif op == 'ON':  # M15: DRAW ON Name, the canvas later DRAW statements draw on
+                node.target = self.expect('IDENT').value.upper()
             elif self.cur().kind != 'NEWLINE':
                 node.values.append(self.expression())
                 while self.accept('OP', ','):
                     node.values.append(self.expression())
+            if (op == 'TEXT' and self.cur().kind == 'IDENT'
+                    and self.cur().value.upper() == 'ALIGN'):  # M15
+                self.pop()
+                where = self.expect('IDENT')
+                if where.value.upper() not in DRAW_ALIGNS or len(node.values) != 3:
+                    raise SourceError(where.line, where.column,
+                                      'DRAW TEXT x, y, text$ ALIGN takes LEFT, CENTRE or RIGHT '
+                                      '(and no cell width)')
+                node.align = where.value.upper().replace('CENTER', 'CENTRE')
             if len(node.values) not in DRAW_ARITY[op]:
                 want = ' or '.join(str(n) for n in DRAW_ARITY[op])
                 raise SourceError(token.line, token.column,
@@ -582,6 +628,9 @@ class Parser:
                             f'expected KEY or TICK (each at most once), got {word.value}',
                         )
             node = item
+        elif kind == 'ON STOP':  # M15
+            self.pop()
+            node = OnStop(token.line, token.column, self.expect('IDENT').value.upper())
         elif kind == 'TIMER':  # M6
             word = self.expect('IDENT')
             upper = word.value.upper()
@@ -728,6 +777,9 @@ class Parser:
                 node = EndSub(token.line, token.column)
             else:
                 node = EndProgram(token.line, token.column)
+        elif (kind == 'TYPE' and self.cur().kind == 'IDENT' and self.cur().value.upper() == 'FONT'
+              and self.i + 1 < len(self.ts) and self.ts[self.i + 1].kind != 'NEWLINE'):
+            node = self._type_font(token)  # M15: TYPE FONT family, size (a record TYPE FONT has no more)
         elif kind == 'TYPE':  # M10: TYPE Name / fields / END TYPE
             node = self._type_def(token)
         elif kind == 'DB':  # M10: DB op Array, ...

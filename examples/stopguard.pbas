@@ -1,0 +1,56 @@
+' Stop guard (M15 example): Rosanne's Tasks > Stop without losing work.
+' A program with menus ends on Tasks > Stop. ON STOP names a FUNCTION ...
+' AS BOOLEAN that runs first: TRUE ends the program, FALSE keeps it. Here
+' lib/app.pbas's AppMayClose asks Save / Discard / Cancel when the note has
+' unsaved changes, and the same question guards the Quit button.
+INCLUDE "lib/app.pbas"
+DIM Note$ AS STRING * 60
+DIM Shown$ AS STRING * 60
+WINDOW "Stop guard"
+TEXTBOX Note$, "Note"
+LABEL AppStatus$
+BUTTON "Keep", Keep, DEFAULT
+BUTTON "Save", SaveIt
+BUTTON "Quit", Quit
+MENU "File"
+    ITEM "Save", SaveIt, KEY "S"
+    ITEM "Quit", Quit, KEY "Q"
+END MENU
+ON STOP AppMayClose
+
+FUNCTION AppSave() AS BOOLEAN
+    OPEN "STOPNOTE.TXT" FOR OUTPUT AS #1
+    PRINT #1, Note$
+    CLOSE #1
+    IF IOERR <> 0 THEN
+        CALL AppFail("Save", IOERR)
+        RETURN FALSE
+    END IF
+    Shown$ = Note$
+    CALL AppSaved
+    CALL AppSay("Saved")
+    RETURN TRUE
+END FUNCTION
+
+SUB Keep
+    IF Note$ <> Shown$ THEN
+        CALL AppChanged
+        CALL AppSay("Changed: not saved")
+    END IF
+END SUB
+
+SUB SaveIt
+    IF AppSave() THEN
+        CALL AppSay("Saved")
+    END IF
+END SUB
+
+SUB Quit
+    CALL Keep
+    IF AppMayClose() THEN
+        EXIT
+    END IF
+END SUB
+
+CALL AppSay("Type a note, then Keep")
+END

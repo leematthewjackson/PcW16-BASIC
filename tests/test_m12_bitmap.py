@@ -65,6 +65,7 @@ def run(src: str, files=None, banks=None, sim=None, legacy=False, **disk_options
     options = {"runtime_sections": banks} if banks else {}
     if legacy:
         options["legacy_file_safety"] = True
+        options["legacy_tasks_stop"] = True
     r = guarded_run(src, events=[("click", go)], disk=disk, build_options=options or None, **(sim or {}))
     assert r.violations == [], r.violations[:5]
     assert disk.open_at_exit in (None, (None, None)), disk.open_at_exit

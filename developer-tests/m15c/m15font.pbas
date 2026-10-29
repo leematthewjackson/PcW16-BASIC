@@ -1,0 +1,103 @@
+' M15FONT: M15c acceptance for W2, DRAW FONT 1-12, TEXTWIDTH in each font,
+' the measured right-edge cut and DRAW TEXT ... ALIGN (docs/M15C-ACCEPTANCE.md,
+' steps F1-F5). Each page draws on the canvas; its last line gives the
+' widths TEXTWIDTH measured, and a short vertical tick after each line marks
+' where TEXTWIDTH says the line ends. Also step S6: the program has menus and no
+' ON STOP, so Tasks > Stop ends it.
+' r2 (M15c F3): Cut 1-6 and Cut 7-12 run a long line in each font from x = 300;
+' every line must stop before the right frame (fonts other than 7 keep half
+' a W + 1 px free). Bad font is in the File menu.
+DIM Page AS INTEGER
+DIM Info$ AS STRING * 90
+DIM N AS INTEGER
+DIM W AS INTEGER
+DIM Y AS INTEGER
+DIM T$ AS STRING * 60
+WINDOW "M15 Fonts", LARGE
+CANVAS 560, 280, PAINT Draw
+BUTTON "Fonts 1-6", Page1
+BUTTON "Fonts 7-12", Page2
+BUTTON "Cut 1-6", Page3
+BUTTON "Cut 7-12", Page5
+BUTTON "Align", Page4
+BUTTON "Quit", Quit
+MENU "File"
+    ITEM "Bad font", BadFont
+    ITEM "Quit", Quit
+END MENU
+
+SUB Draw
+    DRAW CLEAR
+    SELECT CASE Page
+    CASE 1, 2
+        Info$ = "Widths:"
+        Y = 4
+        FOR N = Page * 6 - 5 TO Page * 6
+            DRAW FONT N
+            T$ = "Font " + STR$(N) + ": The quick brown fox 0123"
+            W = TEXTWIDTH(T$)
+            DRAW TEXT 4, Y, T$
+            DRAW LINE 4 + W, Y, 4 + W, Y + 12
+            Info$ = Info$ + " " + STR$(N) + "=" + STR$(W)
+            Y = Y + 40
+        NEXT N
+    CASE 3, 5
+        Info$ = "Cut: no line may reach the right frame"
+        Y = 4
+        FOR N = Page * 3 - 8 TO Page * 3 - 3
+            DRAW FONT N
+            DRAW TEXT 300, Y, "Font " + STR$(N) + " WWWW runs on past the right edge of the canvas"
+            Y = Y + 40
+        NEXT N
+    CASE 4
+        Info$ = "Align: LEFT from the line, CENTRE on it, RIGHT up to it"
+        DRAW LINE 280, 0, 280, 255
+        Y = 4
+        FOR N = 3 TO 11 STEP 4
+            DRAW FONT N
+            DRAW TEXT 280, Y, "Left, font " + STR$(N) ALIGN LEFT
+            DRAW TEXT 280, Y + 26, "Centre, font " + STR$(N) ALIGN CENTRE
+            DRAW TEXT 280, Y + 52, "Right, font " + STR$(N) ALIGN RIGHT
+            Y = Y + 82
+        NEXT N
+    END SELECT
+    DRAW FONT 7
+    DRAW TEXT 4, 262, Info$
+END SUB
+
+SUB Page1
+    Page = 1
+    CALL Draw
+END SUB
+
+SUB Page2
+    Page = 2
+    CALL Draw
+END SUB
+
+SUB Page3
+    Page = 3
+    CALL Draw
+END SUB
+
+SUB Page4
+    Page = 4
+    CALL Draw
+END SUB
+
+SUB Page5
+    Page = 5
+    CALL Draw
+END SUB
+
+SUB BadFont
+    N = 13
+    DRAW FONT N
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+
+Page = 1
+END

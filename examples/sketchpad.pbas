@@ -1,0 +1,126 @@
+' Sketchpad (M15 example): two named canvases in one window.
+'   Palette: click a shade (or Left / Right when it has the keyboard).
+'   Pad: drag to draw in that shade; the arrow keys move the pen marker.
+' Each canvas has its own PAINT, MOUSE and KEYS handlers, and draws on itself
+' while they run. A press gives that canvas the keyboard; the buttons do it
+' with FOCUS. Clear uses DRAW ON to draw on the Pad from a button.
+' The runtime does not keep what was drawn: after an alert (Help) both
+' canvases are painted again, so the Pad stores its dots and its PAINT draws
+' them back.
+DIM Shade AS INTEGER
+DIM DX(250) AS INTEGER
+DIM DY(250) AS INTEGER
+DIM DS(250) AS INTEGER
+DIM Dots AS INTEGER
+DIM PX AS INTEGER
+DIM PY AS INTEGER
+DIM N AS INTEGER
+WINDOW "Sketchpad", LARGE
+CANVAS Palette, 560, 30, PAINT PalPaint, MOUSE PalMouse, KEYS PalKeys
+CANVAS Pad, 560, 220, PAINT PadPaint, MOUSE PadMouse, KEYS PadKeys
+BUTTON "Keys: Palette", KeysPalette
+BUTTON "Keys: Pad", KeysPad
+BUTTON "Clear", ClearPad
+BUTTON "Help", Help
+BUTTON "Quit", Quit
+MENU "File"
+    ITEM "Clear", ClearPad
+    ITEM "Quit", Quit
+END MENU
+
+SUB PalPaint
+    DRAW CLEAR
+    FOR N = 0 TO 7
+        DRAW FILL N * 70 + 4, 4, 62, 22, N
+    NEXT N
+    DRAW BOX Shade * 70, 0, 70, 30
+    DRAW BOX Shade * 70 + 1, 1, 68, 28
+END SUB
+
+SUB PalMouse
+    IF MOUSEEVENT = 1 AND MOUSEX >= 0 AND MOUSEX < 560 THEN
+        Shade = MOUSEX / 70
+        CALL PalPaint
+    END IF
+END SUB
+
+SUB PalKeys
+    IF KEYCODE = 226 AND Shade > 0 THEN
+        Shade = Shade - 1
+    END IF
+    IF KEYCODE = 227 AND Shade < 7 THEN
+        Shade = Shade + 1
+    END IF
+    CALL PalPaint
+END SUB
+
+SUB Dot(X AS INTEGER, Y AS INTEGER)
+    IF X >= 0 AND X <= 556 AND Y >= 0 AND Y <= 216 THEN
+        DRAW FILL X, Y, 4, 4, Shade
+        IF Dots < 250 THEN
+            Dots = Dots + 1
+            DX(Dots) = X
+            DY(Dots) = Y
+            DS(Dots) = Shade
+        END IF
+    END IF
+END SUB
+
+SUB PadPaint
+    DRAW CLEAR
+    FOR N = 1 TO Dots
+        DRAW FILL DX(N), DY(N), 4, 4, DS(N)
+    NEXT N
+    DRAW INK XOR
+    DRAW BOX PX, PY, 8, 8
+    DRAW INK BLACK
+END SUB
+
+SUB PadMouse
+    CALL Dot(MOUSEX, MOUSEY)
+END SUB
+
+SUB PadKeys
+    DRAW INK XOR
+    DRAW BOX PX, PY, 8, 8
+    IF KEYCODE = 224 AND PY >= 4 THEN
+        PY = PY - 4
+    END IF
+    IF KEYCODE = 225 AND PY <= 208 THEN
+        PY = PY + 4
+    END IF
+    IF KEYCODE = 226 AND PX >= 4 THEN
+        PX = PX - 4
+    END IF
+    IF KEYCODE = 227 AND PX <= 548 THEN
+        PX = PX + 4
+    END IF
+    DRAW BOX PX, PY, 8, 8
+    DRAW INK BLACK
+END SUB
+
+SUB KeysPalette
+    FOCUS Palette
+END SUB
+
+SUB KeysPad
+    FOCUS Pad
+END SUB
+
+SUB ClearPad
+    Dots = 0
+    DRAW ON Pad
+    CALL PadPaint
+END SUB
+
+SUB Help
+    MESSAGE "Drag on the pad to draw. Both canvases are painted again after this alert."
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+
+PX = 276
+PY = 106
+END

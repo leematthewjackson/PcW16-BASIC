@@ -67,7 +67,7 @@ Work from the repository's top folder, the one that holds `pcw16basic`, `pbas/` 
 
 **From the repository folder.** No installation is needed:
 ```sh
-python3 pcw16basic --version          # PcW16 BASIC 1.0.0rc1
+python3 pcw16basic --version          # PcW16 BASIC 1.0.0rc2
 python3 pcw16basic doctor
 ```
 From another folder, give the path to the script, for example `python3 ../pcw16basic build hello.pbas`.
@@ -104,7 +104,7 @@ ok   tools/build.py
 ok   tools/pbimage.py
 ok   examples/lib/sprite.pbas
 ok   LANGUAGE-SPEC.md
-PcW16 BASIC 1.0.0rc1 at /path/to/PcW16-BASIC
+PcW16 BASIC 1.0.0rc2 at /path/to/PcW16-BASIC
 ready
 ```
 

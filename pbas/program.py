@@ -40,6 +40,7 @@ class Widget:
     paint: str | None = None  # M9: CANVAS PAINT handler
     mouse: str | None = None  # M9: CANVAS MOUSE handler
     keys_handler: str | None = None  # M9: CANVAS KEYS handler
+    canvas_name: str | None = None  # M15: CANVAS Name
 
 
 @dataclass
@@ -141,16 +142,18 @@ SimpleStatement = (
     | ast.Beep | ast.Focus | ast.Show | ast.TimerSwitch | ast.AssignIndex | ast.ExitLoop
     | ast.Randomize | ast.OpenFile | ast.CloseFile | ast.PrintFile | ast.LineInput | ast.Kill
     | ast.NameFile | ast.Draw | ast.TextOp | ast.RecordCopy | ast.DbOp | ast.BitmapOp | ast.PageOp
+    | ast.TypeFont
 )
 _SIMPLE = (ast.Assign, ast.CallSub, ast.Exit, ast.Filesave, ast.Fileload, ast.Message,
            ast.Beep, ast.Focus, ast.Show, ast.TimerSwitch, ast.AssignIndex, ast.ExitLoop,
            ast.Randomize, ast.OpenFile, ast.CloseFile, ast.PrintFile, ast.LineInput, ast.Kill,
-           ast.NameFile, ast.Draw, ast.TextOp, ast.RecordCopy, ast.DbOp, ast.BitmapOp, ast.PageOp)
+           ast.NameFile, ast.Draw, ast.TextOp, ast.RecordCopy, ast.DbOp, ast.BitmapOp, ast.PageOp,
+           ast.TypeFont)
 BodyItem = SimpleStatement | IfBlock | WhileBlock | ForBlock
 
 _DECLARATIONS = (ast.Dim, ast.Window, ast.Label, ast.Textbox, ast.Checkbox, ast.Button,
                  ast.Radio, ast.Numberbox, ast.Menu, ast.Item, ast.EndMenu, ast.Timer,
-                 ast.ListCtl, ast.Slider, ast.Canvas)
+                 ast.ListCtl, ast.Slider, ast.Canvas, ast.OnStop)
 _MARKERS = (
     ast.Sub,
     ast.EndSub,
@@ -180,6 +183,8 @@ class Program:
     windows: list = None  # list[WindowDecl] (M6); one entry for a legacy program
     menus: list = None  # list[MenuDecl] (M6)
     timer: TimerDecl | None = None  # M6
+    on_stop: str | None = None  # M15: ON STOP's FUNCTION
+    on_stop_line: int = 0
 
 
 def build_program(nodes, analysis) -> Program:
@@ -278,4 +283,6 @@ def build_program(nodes, analysis) -> Program:
         windows=getattr(analysis, 'windows', None) or [],
         menus=getattr(analysis, 'menus', None) or [],
         timer=getattr(analysis, 'timer', None),
+        on_stop=getattr(analysis, 'on_stop', None),
+        on_stop_line=getattr(analysis, 'on_stop_line', 0),
     )

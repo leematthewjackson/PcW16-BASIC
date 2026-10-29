@@ -154,6 +154,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "in the last place could round up); only to reproduce older accepted executables",
     )
     parser.add_argument(
+        "--legacy-tasks-stop",
+        action="store_true",
+        help="a program with menus and no ON STOP ignores Rosanne's Tasks > Stop, as "
+        "before M15; only to reproduce older accepted executables",
+    )
+    parser.add_argument(
         "--code-banks",
         choices=("auto", "always", "never"),
         default="auto",
@@ -228,6 +234,7 @@ def cmd_build(args: argparse.Namespace) -> int:
             legacy_timing=args.legacy_timing,
             legacy_file_safety=args.legacy_file_safety,
             legacy_real_rounding=args.legacy_real_rounding,
+            legacy_tasks_stop=args.legacy_tasks_stop,
             code_banks=args.code_banks,
             runtime_sections=(args.runtime_banks if args.runtime_banks in ("", "all")
                               else tuple(s.strip().upper() for s in args.runtime_banks.split(","))),

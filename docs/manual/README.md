@@ -48,8 +48,10 @@ describes what the compiler actually does and says so.
     `TEXTBOX`, `CHECKBOX`, `BUTTON`, `RADIO`, `NUMBERBOX`, `LIST`, `CHOICE`,
     `SLIDER`, `SHOW`, `FOCUS`, `ASK`, `BEEP`.
 11. [Menus, keys and mouse](11-menus-keys-mouse.md) — `MENU`, `ITEM`,
-    keyboard and mouse handlers on a canvas, `KEYDOWN`.
-12. [Drawing](12-drawing.md) — `CANVAS` and `DRAW`.
+    Tasks → Stop and `ON STOP`, keyboard and mouse handlers on a canvas, `KEYDOWN`.
+12. [Drawing](12-drawing.md) — `CANVAS` and `DRAW`, the twelve dialog fonts
+    (`DRAW FONT`, `ALIGN`), scalable type (`TYPE FONT`, `DRAW TYPE`), and
+    several canvases (`DRAW ON`).
 13. [Bitmaps and sprites](13-bitmaps-and-sprites.md) — `BITMAP`, masks,
     `POINT`, picture files.
 14. [Timers and animation](14-timers-and-animation.md) — `TIMER`, ticks,
@@ -150,11 +152,15 @@ documents it. The list is taken from the compiler's lexer and parser
 | `DB LOAD\|SAVE\|NEW\|DELETE\|SORT\|SEARCH` | databases | [8](08-records-and-databases.md) |
 | `WINDOW [Name,] "title" [, LARGE]` | declare a window | [10](10-windows-and-controls.md) |
 | `LABEL`, `TEXTBOX`, `CHECKBOX`, `BUTTON`, `RADIO`, `NUMBERBOX`, `LIST`, `CHOICE`, `SLIDER` | controls | [10](10-windows-and-controls.md) |
-| `SHOW Name`, `FOCUS var` | switch window, move the focus | [10](10-windows-and-controls.md) |
+| `SHOW Name`, `FOCUS var` or `FOCUS Canvas` | switch window, move the focus | [10](10-windows-and-controls.md) |
 | `var = ASK(…)`, `BEEP` | question alert, beep | [10](10-windows-and-controls.md) |
 | `MENU "title"` / `ITEM …` / `END MENU` | menus | [11](11-menus-keys-mouse.md) |
-| `CANVAS w, h [, PAINT …] [, MOUSE …] [, KEYS …]` | a drawing area and its handlers | [12](12-drawing.md) |
+| `ON STOP Handler` | run a FUNCTION when Rosanne's Tasks → Stop is chosen | [11](11-menus-keys-mouse.md#tasks--stop-and-on-stop) |
+| `CANVAS [Name,] w, h [, PAINT …] [, MOUSE …] [, KEYS …]` | a drawing area and its handlers (up to 8, named) | [12](12-drawing.md) |
 | `DRAW CLEAR\|FILL\|INVERT\|BOX\|LINE\|PIXEL\|TEXT\|SCROLL\|INK` | draw on the canvas | [12](12-drawing.md) |
+| `DRAW FONT n`, `DRAW TEXT … ALIGN …` | dialog fonts 1–12, aligned text | [12](12-drawing.md#draw-font-and-align) |
+| `TYPE FONT SWISS\|TIMES, size …`, `DRAW TYPE x, y, s$` | scalable type, 6 to 72 points | [12](12-drawing.md#scalable-type-type-font-and-draw-type) |
+| `DRAW ON Name` | choose the canvas later drawing goes to | [12](12-drawing.md#several-canvases-draw-on) |
 | `BITMAP GET\|PUT\|MASK\|SAVE\|LOAD` | pictures | [13](13-bitmaps-and-sprites.md) |
 | `TIMER Handler, EVERY n [TICKS]`, `TIMER ON`, `TIMER OFF` | timer events | [14](14-timers-and-animation.md) |
 | `PAGE NEW\|FONT\|TEXT\|LINE\|BOX\|FILL\|PRINT\|CLOSE` | printing | [15](15-printing.md) |
@@ -181,6 +187,8 @@ documents it. The list is taken from the compiler's lexer and parser
 | `PAINT`, `MOUSE`, `KEYS` | `CANVAS` handlers | [11](11-menus-keys-mouse.md), [12](12-drawing.md) |
 | `BLACK`, `WHITE`, `XOR` | `DRAW INK` | [12](12-drawing.md) |
 | `EVERY`, `TICKS`, `ON`, `OFF` | `TIMER` | [14](14-timers-and-animation.md) |
+| `LEFT`, `CENTRE`, `RIGHT` | `DRAW TEXT … ALIGN` | [12](12-drawing.md#draw-font-and-align) |
+| `SWISS`, `TIMES`, `BOLD`, `ITALIC` | `TYPE FONT` | [12](12-drawing.md#scalable-type-type-font-and-draw-type) |
 | `BOLD` | `PAGE FONT` | [15](15-printing.md) |
 
 ### Operators
@@ -205,7 +213,7 @@ documents it. The list is taken from the compiler's lexer and parser
 | `DBFIND`, `DBNEXTID`, `DBRECOVERED` | [8](08-records-and-databases.md) |
 | `ASK` | [10](10-windows-and-controls.md) |
 | `MOUSEX`, `MOUSEY`, `MOUSEEVENT`, `KEYCODE`, `KEYSHIFT`, `KEYDOWN` | [11](11-menus-keys-mouse.md) |
-| `TEXTWIDTH` | [12](12-drawing.md) |
+| `TEXTWIDTH`, `TYPEWIDTH`, `TYPEHEIGHT` | [12](12-drawing.md) |
 | `POINT` | [12](12-drawing.md#point) |
 | `BITMAPW`, `BITMAPH` | [13](13-bitmaps-and-sprites.md#bitmapw-and-bitmaph) |
 | `SECONDS`, `CLOCKTICKS` | [14](14-timers-and-animation.md) |

@@ -142,6 +142,12 @@ class _Lowerer:
             elif isinstance(node, (ast.Assign, ast.AssignIndex, ast.For)) \
                     and name in self.consts and name not in scope:
                 raise SourceError(node.line, node.column, f'{name} is a CONST and cannot be changed')
+            if isinstance(node, ast.OnStop):  # M15: a FUNCTION ... AS BOOLEAN without parameters
+                info = self.procs.get(node.handler)
+                if not info or info[0] != 'FUNCTION' or info[1] or info[2] != 'BOOLEAN':
+                    raise SourceError(node.line, node.column,
+                                      f'ON STOP needs a FUNCTION {node.handler}() AS BOOLEAN without '
+                                      'parameters (TRUE ends the program, FALSE keeps it running)')
             if isinstance(node, _HANDLER_NODES):
                 attrs = ('handler', 'change', 'action')
                 if isinstance(node, ast.Canvas):  # M9 (a BUTTON's `keys` are key names)

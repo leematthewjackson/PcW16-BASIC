@@ -78,7 +78,7 @@ class LegacyTimingTests(unittest.TestCase):
                 with self.subTest(name):
                     prg = Path(tmp) / f"{name}.PRG"
                     build(ROOT / src, Path(tmp) / f"{name}.asm", prg, runtime_sections=banks, legacy_timing=True,
-                          legacy_file_safety=True, legacy_real_rounding=True)  # M14: as accepted
+                          legacy_file_safety=True, legacy_real_rounding=True, legacy_tasks_stop=True)  # M14: as accepted
                     self.assertEqual(prg.read_bytes(), (CORRECTIVE / name).with_suffix(".PRG").read_bytes())
                     build(ROOT / src, Path(tmp) / f"{name}.asm", prg, runtime_sections=banks)
                     self.assertNotEqual(prg.read_bytes(), (CORRECTIVE / name).with_suffix(".PRG").read_bytes())

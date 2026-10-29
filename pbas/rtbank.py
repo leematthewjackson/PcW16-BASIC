@@ -60,12 +60,15 @@ MOVABLE = ("DB", "CANVAS", "CVLINE", "CVCELL", "FILES", "FIO", "FNAME", "NUMBERS
            "PAGE",
            # M13: parts and masks: the blitter (as BITMAP) and os_copy_24bit
            # into the bottom quarter
-           "BMPPART")
+           "BMPPART",
+           # M15: screen typography: OS calls with addresses in the resident block (as PAGE)
+           "TYPO")
 #: The default set for ``runtime_sections="auto"``.
 DEFAULT = MOVABLE
 #: M14: switches that only select a variant of code inside a section: their
 #: lines belong to (and move with) that section.
-PART_OF = {"FSAFE": "DB"}
+PART_OF = {"FSAFE": "DB", "DWFONT": "CANVAS", "DWALIGN": "CANVAS",  # M15: DRAW FONT, ALIGN
+           "TYPG": "TYPO", "CVMULTI": "CANVAS"}  # M15: screen typography's lines for programs that also print
 
 _IF = re.compile(r"^\s+IF\s+(.*?)\s*(;.*)?$")
 _ELSE = re.compile(r"^\s+ELSE\b")

@@ -1,6 +1,6 @@
 # Example programs
 
-This folder holds 54 example programs (`examples/*.pbas`), the three tutorial programs
+This folder holds 67 example programs (`examples/*.pbas`), the three tutorial programs
 (`examples/tutorial/*.pbas`), the shared libraries they use (`examples/lib/`, described in
 [docs/libraries/README.md](../docs/libraries/README.md)) and the PNG sources of their pictures
 (`examples/assets/`). Every program listed here builds with the command given for it.
@@ -33,6 +33,7 @@ Known issues are cited as "known issue KI-nn" and are described in
 - [Games](#games): JUMPER
 - [Advanced](#advanced): benchmarks
 - [Tutorials](#tutorials)
+- [M15: several canvases, fonts, type and Tasks → Stop](#m15-several-canvases-fonts-type-and-tasks--stop): SKETCHPAD, FONTBOOK, STOPGUARD, the type specimen, and the applications that ask before Stop
 - [M14 versions](#m14-versions): SPRITED, MDEDIT IV, DESIGNER and the scientific calculator, corrected
 - [Earlier versions](#earlier-versions)
 
@@ -104,17 +105,19 @@ the pictures it loads.
 
 | Program file | Built from | In XAnne |
 |---|---|---|
-| `PAINT2.PRG` | `examples/paint2.pbas --runtime-banks all` | Tested in XAnne |
-| `DESIGNER.PRG` | `examples/designer_m14.pbas --runtime-banks all` | Tested in XAnne |
-| `SPRITED.PRG` | `examples/sprited_m14.pbas --runtime-banks all` | Tested in XAnne |
-| `MDEDIT4.PRG` | `examples/mdedit4_m14.pbas --runtime-banks all` | Tested in XAnne |
+| `PAINT2.PRG` | `examples/paint2_m15.pbas --runtime-banks all` | Tested in XAnne (M15) |
+| `DESIGNER.PRG` | `examples/designer_m15.pbas --runtime-banks all` | Tested in XAnne (M15) |
+| `SPRITED.PRG` | `examples/sprited_m15.pbas --runtime-banks all` | Tested in XAnne (M15) |
+| `MDEDIT4.PRG` | `examples/mdedit4_m15.pbas --runtime-banks all` | Tested in XAnne (M15) |
+| `SPECIMEN.PRG` | `examples/m15_specimen.pbas --runtime-banks all` | Tested in XAnne (M15) |
 | `SCICALC.PRG` | `examples/scicalc_m14.pbas` | Tested in XAnne |
 | `JUMPER.PRG` | `examples/jumper.pbas --runtime-banks all` | Tested in XAnne |
-| `T1HELLO.PRG` | `examples/tutorial/t1_hello.pbas` | no XAnne run recorded |
+| `T1HELLO.PRG` | `examples/tutorial/t1_hello.pbas --legacy-tasks-stop` | no XAnne run recorded |
 | `T2DRAW.PRG` | `examples/tutorial/t2_draw.pbas` | no XAnne run recorded |
 | `T3HOP.PRG` | `examples/tutorial/t3_hop.pbas` | Tested in XAnne |
 
-The folder also holds the ten `.PBI` pictures listed above. With Python 3.13 and Pasmo 0.5.3 on Linux,
+`T1HELLO.PRG` is the 1.0.0rc1 build, kept byte for byte, so it ignores Tasks → Stop; a build of
+`t1_hello.pbas` without the option ends on Stop. The folder also holds the ten `.PBI` pictures listed above. With Python 3.13 and Pasmo 0.5.3 on Linux,
 building these sources with the options shown reproduces every prebuilt file byte for byte (compare
 with `sha256sum`). The other examples are provided as source only.
 
@@ -529,6 +532,31 @@ The programs that the three step-by-step tutorials build. Each tutorial's code m
 | **Tutorial 1**: a window with a label, a text field, buttons and a menu. Source `examples/tutorial/t1_hello.pbas`. Guide [docs/TUTORIAL-1-FIRST-PROGRAM.md](../docs/TUTORIAL-1-FIRST-PROGRAM.md). | `python3 tools/build.py examples/tutorial/t1_hello.pbas` | none | A large window "HELLO". Type your name and press Greet (Return, or File > Greet, Ctrl+G) to see a greeting in the label. Quit is Ctrl+Q. | Simulator only (no XAnne run recorded). Prebuilt as `T1HELLO.PRG`. |
 | **Tutorial 2**: a canvas you draw boxes on by dragging, with an icon palette. Source `examples/tutorial/t2_draw.pbas`. Guide [docs/TUTORIAL-2-GRAPHICS.md](../docs/TUTORIAL-2-GRAPHICS.md). | `python3 tools/build.py examples/tutorial/t2_draw.pbas` | `T2ICONS.PBI` | A large window "DRAW" with a canvas and two tool icons. Drag to draw. Clear empties the canvas. Without the picture, the status reads `T2ICONS.PBI is missing`. | Simulator only. Prebuilt as `T2DRAW.PRG`. |
 | **Tutorial 3**: a sprite that runs while a key is held, and jumps. Source `examples/tutorial/t3_hop.pbas`. Guide [docs/TUTORIAL-3-GAME.md](../docs/TUTORIAL-3-GAME.md). | `python3 tools/build.py examples/tutorial/t3_hop.pbas` | `T3HERO.PBI`, `T3HEROM.PBI` | A large window "HOP". The status reads `Left / Right, Space`. The hero runs while Left or Right is held, and jumps and lands with Space. | Tested in XAnne. Prebuilt as `T3HOP.PRG`. |
+
+## M15: several canvases, fonts, type and Tasks → Stop
+
+Programs that use what 1.0.0rc2 adds ([manual, chapter 12](../docs/manual/12-drawing.md) and
+[chapter 11](../docs/manual/11-menus-keys-mouse.md#tasks--stop-and-on-stop)). None loads a picture or
+needs a private file. Each builds with `python3 tools/build.py SOURCE`, plus the option shown.
+
+| Program | Build | What you see | Evidence |
+|---|---|---|---|
+| **SKETCHPAD**. Source `examples/sketchpad.pbas`. | no option | Two canvases in one window. Click a shade on the Palette (or Left/Right once it has the keyboard); drag on the Pad to draw. **Keys: Palette** and **Keys: Pad** give a canvas the keyboard with `FOCUS`; the arrows move a pen marker on the Pad. **Clear** uses `DRAW ON` from a button. After **Help**'s alert both canvases are painted again and the drawing comes back, because the Pad stores its last 250 dots | Simulator only (`tests/test_m15_examples.py`); every statement it uses is tested in XAnne (M15c) |
+| **FONTBOOK**. Source `examples/fontbook.pbas`. | no option | Three pages, from the buttons **Fonts 1-6**, **Fonts 7-12** and **Align**: each font line with a tick at its measured end (`TEXTWIDTH`) and its width in pixels, and an Align page (LEFT, CENTRE, RIGHT about a line) | Simulator only (`tests/test_m15_examples.py`); the fonts, widths and `ALIGN` are tested in XAnne (M15c) |
+| **STOPGUARD**. Source `examples/stopguard.pbas`. | no option | A note field with **Keep**, **Save** and **Quit**. Type a note and press **Keep** (Return): the status line says it is not saved. Then choose Rosanne's Tasks → Stop: it asks Save / Discard / Cancel (`ON STOP AppMayClose`, `lib/app.pbas`); Save writes `STOPNOTE.TXT` and ends, Cancel keeps the program. With nothing unsaved, Stop ends at once. Quit asks the same question | Simulator only (`tests/test_m15_examples.py`); `ON STOP AppMayClose` is tested in XAnne in the applications below |
+| **SPECIMEN** (the type specimen). Source `examples/m15_specimen.pbas`. | `--runtime-banks all` | Type a sample and **Show**: a Preview canvas draws it in Swiss or Times, bold or italic, at the size clicked on a strip canvas (6 to 72 points); a caption in dialog font 3 gives `TYPEWIDTH` and `TYPEHEIGHT`, right-aligned. Type → "Sizes take keys" lets Left/Right choose sizes. **Print** prints the sample. Tasks → Stop asks `End the type specimen?` | Tested in XAnne (M15c, r2 R5) |
+
+**Applications that ask before Tasks → Stop.** Each `_m15` copy adds one line, `ON STOP AppMayClose`
+(or its own question), to its M14 version, and is otherwise the same program. Build each as its original,
+naming the `_m15` source. `programs/` holds the PAINT II, DESIGNER, SPRITED and MDEDIT IV builds.
+
+| Source | Copy of | Evidence |
+|---|---|---|
+| `examples/paint2_m15.pbas` | `examples/paint2.pbas` | Tested in XAnne (M15c S7) |
+| `examples/designer_m15.pbas` | `examples/designer_m14.pbas` | Tested in XAnne (M15c S7) |
+| `examples/sprited_m15.pbas` | `examples/sprited_m14.pbas` | Tested in XAnne (M15c S7) |
+| `examples/mdedit4_m15.pbas` | `examples/mdedit4_m14.pbas` | Tested in XAnne (M15c S7) |
+| `examples/contacts4_m15.pbas` | `examples/contacts4.pbas` | Tested in XAnne (M15c S7); uses `CONTACTS.PDB`, as `contacts4.pbas` does |
 
 ## M14 versions
 

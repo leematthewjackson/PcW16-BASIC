@@ -32,7 +32,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(out.returncode, 0)
         for word in ("doctor", "new", "check", "build", "assets", "image", "memory", "test"):
             self.assertIn(word, out.stdout)
-        self.assertIn("1.0.0rc1", cli("--version").stdout)
+        self.assertIn("1.0.0rc2", cli("--version").stdout)
 
     def test_new_refuses_an_existing_folder_and_a_bad_name(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -218,11 +218,11 @@ notes can be followed. Each was confirmed by compiling a program; the details ar
 - **Workaround:** use the arrows or page by clicking the track.
 - **Evidence:** Tested in XAnne.
 
-**KI-6: some keys are untested.**
+**KI-6: some keys are untested.** *Partly verified.*
 - **Symptom:** unknown.
-- **What is untested:** the Stop and Help keys as `BUTTON … KEY STOP` or `KEY HELP`, which were not
-  mapped in the owner's XAnne; pressing Return while a TEXTBOX is being edited; and using a LIST from the
-  keyboard.
+- **Verified:** XAnne's Esc key acts as the Stop key and works a `BUTTON … KEY STOP` (M15a).
+- **What is untested:** the Help key as `KEY HELP`, which was not mapped in the owner's XAnne; pressing
+  Return while a TEXTBOX is being edited; and using a LIST from the keyboard.
 - **Workaround:** give such buttons a second way in, such as a menu item.
 - **Evidence:** untested.
 
@@ -265,11 +265,13 @@ notes can be followed. Each was confirmed by compiling a program; the details ar
 - **Workaround:** draw in the canvas's PAINT handler, which runs when the window opens.
 - **Evidence:** simulator only (found by tests).
 
-**KI-87: which control has the keyboard focus, a TEXTBOX or the canvas?** *Open.*
-- **Symptom:** in a window with both a TEXTBOX and a canvas, keys typed after clicking the canvas may still
-  go to the TEXTBOX. `FOCUS` cannot name a canvas.
-- **Workaround:** give every key command a menu item as well, as `examples/sprited.pbas` does.
-- **Evidence:** untested in XAnne.
+**KI-87: which control has the keyboard focus, a TEXTBOX or the canvas?** *Verified.*
+- **Symptom:** in a window with both a TEXTBOX and a canvas, keys could have stayed with the TEXTBOX
+  after a click on the canvas.
+- **Evidence:** Tested in XAnne: a click on the canvas takes the keyboard (M15a K1), and `FOCUS Name`
+  gives a named canvas the keyboard without a click (M15c C3–C4). Untested: `FOCUS` of a canvas while a
+  TEXTBOX in the same window is being edited.
+- **Workaround:** none needed; a menu item for each key command still helps people who use the mouse.
 
 ### Keys, mouse and timers
 
@@ -315,22 +317,27 @@ notes can be followed. Each was confirmed by compiling a program; the details ar
 - **Evidence:** Tested in XAnne: after the first second the clock never went back, and its largest step
   was 2/16 s.
 
-**KI-35: Rosanne's Tasks → Stop is unreliable.** *Rosanne behaviour.*
-- **Symptom:** stopping a program from Rosanne's Tasks menu does not always work, and a program stopped
-  that way does not run its own exit path.
-- **Workaround:** quit with the program's own Quit button or menu item.
-- **Evidence:** Tested in XAnne, as an owner observation.
+**KI-35: Rosanne's Tasks → Stop.** *Fixed in M15.*
+- **Symptom (up to M14):** Stop from Rosanne's Tasks menu did nothing.
+- **Cause:** Stop arrives as Tasks menu entry 0, and the runtime ignored that menu (found in XAnne, M15a).
+- **Now:** a program with menus ends on Stop; `ON STOP` lets it ask first
+  ([chapter 11](manual/11-menus-keys-mouse.md#tasks--stop-and-on-stop)). A program without menus does not
+  show the menu bar, so Stop never reaches it (KI-108). A program built with `--legacy-tasks-stop`, or
+  with a release before 1.0.0rc2, still ignores Stop.
+- **Evidence:** Tested in XAnne (M15c S1–S4, S6, S7): ending at once, staying open, asking first, saving
+  then ending, and the five applications' unsaved-work questions.
 
 ### Drawing and text on the canvas
 
-**KI-39 and KI-76: DRAW TEXT may stop short of the right edge.** *Limitation.*
+**KI-39 and KI-76: DRAW TEXT may stop short of the right edge.** *Limitation; avoidable since M15.*
 - **Symptom:** `DRAW TEXT` draws at most (canvas width − x) ÷ 11 characters in one call, whatever the
   text's real width. A line of narrow letters can end well before the edge.
 - **Cause:** 11 pixels is the widest character in the font. Measuring instead would change the bytes of
   programs that have already been tested.
 - **Workaround:** draw a long line in pieces, measuring with `TEXTWIDTH`, as `examples/mdedit4.pbas`
-  does.
-- **Evidence:** Tested in XAnne.
+  does. Since M15, a program that uses `DRAW FONT` (even `DRAW FONT 7`) has its text measured and cut at
+  the last whole character instead.
+- **Evidence:** Tested in XAnne, including the M15 measured cut (M15c F3, r2 R1).
 
 **KI-65: `DRAW TEXT x, y, s$, cell` is not for text people read.** *Limitation.*
 - **Symptom:** with a cell width, text is drawn on a fixed grid and looks letter-spaced, because the font
@@ -369,6 +376,22 @@ notes can be followed. Each was confirmed by compiling a program; the details ar
 - **Workaround:** draw on the canvas and capture it with `BITMAP GET`, or `BITMAP PUT` the picture and
   read it back with `POINT`. `examples/sprited.pbas` works this way.
 - **Evidence:** specification.
+
+**M15 drawing: what is still open.**
+- The dialog fonts' line heights are not known, so there is no `TEXTHEIGHT`; leave room under dialog-font text by
+  eye. Fonts 11 and 12 have unusual glyphs of Rosanne's own.
+- For fonts other than 7, `DRAW TEXT` keeps half a `W` + 1 px free at the right edge (their ink can pass the
+  measured end, M15c); italic type keeps a quarter of its ascender free (KI-109).
+- The speed of type is not measured (eight lines took about 1/16 s, too coarse to compare).
+- The runtime does not keep what is drawn on a canvas: PAINT must draw again whatever the program wants
+  kept, on every canvas (KI-42, KI-107).
+- **Evidence:** Tested in XAnne (M15c and its r2 retest): every type size from 6 to 72 pt, the measured cut,
+  ALIGN, several canvases with FOCUS and repaint.
+
+**KI-108: Tasks → Stop never reaches a program without menus.** *Rosanne behaviour.*
+- **Symptom:** a program without `MENU` shows no menu bar, so its `ON STOP` handler never runs.
+- **Workaround:** give the program a menu, or a Quit button; the compiler warns about `ON STOP` without menus.
+- **Evidence:** Tested in XAnne (M15c S5).
 
 ### Files and databases
 

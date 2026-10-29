@@ -1,6 +1,67 @@
 # Changelog
 
-## Unreleased (M14)
+## 1.0.0rc2 — release candidate 2
+
+Release candidate 2 adds the M15 facilities below to 1.0.0rc1. They are tested in XAnne (Rosanne 1.12) by the project's owner: the M15c session and its
+focused retest. Nothing is tested on a real PcW16. A short summary is in
+[RELEASE-NOTES.md](RELEASE-NOTES.md).
+
+**Compatibility.** Programs that use none of the new statements compile to the same bytes as in
+1.0.0rc1, with one exception: a program with menus gains a 4-byte menu-table row so that Tasks → Stop
+ends it. A program with one canvas keeps its 1.0.0rc1 code. The new runtime code is assembled only
+into programs that use it, and goes to the runtime bank where there is one. `--legacy-tasks-stop`
+rebuilds 1.0.0rc1 executables byte for byte.
+
+**Rosanne's Tasks → Stop now works** (KI-35).
+- Up to 1.0.0rc1 the runtime ignored it. Now a program with menus ends on Stop, as on `EXIT`.
+- `ON STOP Handler` runs a `FUNCTION Handler() AS BOOLEAN` first: TRUE ends the program, FALSE keeps it. The handler may ask a question or save a file.
+- `ON STOP AppMayClose` (lib/app.pbas) asks Save / Discard / Cancel when there are unsaved changes.
+- The M15 versions of MDEDIT IV, PAINT II, DESIGNER, SPRITED and CONTACTS IV ask before Stop ends them.
+- Rosanne shows a program without menus no menu bar, so Stop never reaches it (KI-108). `ON STOP` there gives a warning.
+- *Tested in XAnne* (M15c S1–S7).
+
+**Rosanne's twelve dialog fonts.**
+- `DRAW FONT n` (1 to 12) chooses the font of later `DRAW TEXT` and `TEXTWIDTH` on that canvas.
+- With `DRAW FONT`, text is measured and cut at the last whole character before the right edge. Fonts other than 7 keep half a W + 1 px free there (KI-109).
+- `DRAW TEXT x, y, text$ ALIGN LEFT | CENTRE | RIGHT` places measured text about x.
+- *Tested in XAnne* (M15c F1–F5, retest R1). The fonts' line heights are not measured, so there is no `TEXTHEIGHT` (KI-106).
+
+**Scalable type on the screen.**
+- `TYPE FONT SWISS | TIMES, size [, BOLD] [, ITALIC]` (6, 8, 10, 11, 12, 14, 18, 24, 36 or 72 points) and `DRAW TYPE x, y, text$`: the fonts `PAGE` prints with, drawn on a canvas with the line's top-left at x, y.
+- `TYPEWIDTH(text$)` and `TYPEHEIGHT` measure it.
+- Screen type and printing can be mixed in one program.
+- *Tested in XAnne* (M15c T1–T5, retest R2–R5; printing alongside, T7, provisionally, to PDF). The speed is not measured (T6).
+
+**Several canvases.**
+- `CANVAS Name, width, height, …`: up to 8 named canvases, in any of a program's windows.
+- Each canvas has its own PAINT, MOUSE and KEYS handlers, and draws on itself while they run. A press gives that canvas the keyboard.
+- `DRAW ON Name` chooses where other code draws. `FOCUS Name` gives a canvas the keyboard without a click (KI-87).
+- Each canvas keeps its own `DRAW FONT` and `TYPE FONT`.
+- The runtime keeps no copy of a drawing: PAINT must draw back what the program keeps (KI-107).
+- *Tested in XAnne* (M15c C1–C7, retest R6).
+
+**Examples.** `examples/sketchpad.pbas` (two canvases, `DRAW ON`, `FOCUS`, a drawing PAINT restores),
+`examples/fontbook.pbas` (the twelve fonts, their widths, ALIGN), `examples/stopguard.pbas` (Tasks → Stop
+without losing work) and `examples/m15_specimen.pbas` (all of it, *tested in XAnne*); the `_m15` copies of
+the applications. `programs/` holds the M15 builds of PAINT II, DESIGNER, SPRITED and MDEDIT IV, and SPECIMEN.
+
+**Messages changed.**
+- Two `CANVAS` statements without names: `with more than one CANVAS each needs a name …` (was `a program may have one CANVAS …`).
+- An unknown `DRAW` word lists `… SCROLL, INK, FONT, TYPE or ON …`.
+
+**Corrections made during M15 acceptance (XAnne).**
+- `DRAW TYPE` places the line's top-left at x, y. Rosanne takes y as the baseline, so the text first stood above y, and large sizes drew over the controls above the canvas (KI-105).
+- Dialog fonts other than 7, and italic type, keep a small margin at the right edge (KI-109).
+
+**Build option.** `--legacy-tasks-stop` keeps Stop ignored, only to rebuild old executables byte for byte.
+
+## 1.0.0rc1 — release candidate 1 (the Public Preview)
+
+1.0.0rc1 was published by the project's owner as the PcW16 BASIC Public Preview. It is the M13 candidate
+described in the next section with the M14 corrections below. The text of both sections is as it was
+written before that publication.
+
+### M14 corrections
 
 Corrections to the compiler, the tools and the runtime. The compiler changes
 were checked by compiling programs; the runtime changes are tested on the
@@ -73,7 +134,7 @@ longer contain internal stage names.
 - `tools/build.py --legacy-file-safety` and `--legacy-real-rounding` rebuild the
   old code, only to reproduce older accepted executables byte for byte.
 
-## 1.0.0rc1 — release candidate 1 (not released)
+## The M13 candidate (written as "1.0.0rc1 — release candidate 1 (not released)")
 
 The first version prepared for the public. It has not been released, tagged for the public
 or licensed for redistribution ([LICENSING.md](LICENSING.md)). Everything below is in this

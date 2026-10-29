@@ -121,7 +121,7 @@ def parse_index(alerts) -> list[int]:
 def run(src, files, legacy=False):
     disk = z80sim.Disk(files={(F, k): v for k, v in files.items()})
     r = guarded_run(src, disk=disk, max_steps=400_000_000,
-                    build_options={"legacy_file_safety": True} if legacy else None)
+                    build_options={"legacy_file_safety": True, "legacy_tasks_stop": True} if legacy else None)
     assert r.violations == [], r.violations[:5]
     return r
 

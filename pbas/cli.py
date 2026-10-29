@@ -25,7 +25,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOLS = ROOT / "tools"
-VERSION = "1.0.0rc1"
+VERSION = "1.0.0rc2"
 PYTHON_MIN = (3, 10)
 
 # SPDX-License-Identifier: MIT-0 for the template texts APP_TEMPLATE, GAME_TEMPLATE and

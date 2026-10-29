@@ -22,7 +22,8 @@ from .errors import SourceError
 
 #: built-in functions written without arguments: a variable of the same name hides them
 NO_ARGUMENT_BUILTINS = frozenset({"PI", "SECONDS", "CLOCKTICKS", "IOERR", "MOUSEX", "MOUSEY",
-                                  "MOUSEEVENT", "KEYCODE", "KEYSHIFT", "DBRECOVERED"})
+                                  "MOUSEEVENT", "KEYCODE", "KEYSHIFT", "DBRECOVERED",
+                                  "TYPEHEIGHT"})  # M15
 
 
 def builtin_names() -> frozenset[str]:

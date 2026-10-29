@@ -51,7 +51,7 @@ positional arguments:
     assets              make the PBI1 files a manifest lists
     test                the test suite (tools/run_tests.py)
 ...
-PcW16 BASIC 1.0.0rc1
+PcW16 BASIC 1.0.0rc2
 ```
 
 `--help` after a subcommand shows that command's options: `pcw16basic check --help`,
@@ -79,7 +79,7 @@ ok   tools/build.py
 ok   tools/pbimage.py
 ok   examples/lib/sprite.pbas
 ok   LANGUAGE-SPEC.md
-PcW16 BASIC 1.0.0rc1 at ~/PcW16-BASIC
+PcW16 BASIC 1.0.0rc2 at ~/PcW16-BASIC
 ready
 ```
 

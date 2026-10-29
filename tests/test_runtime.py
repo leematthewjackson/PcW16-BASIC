@@ -155,6 +155,37 @@ CODE_ROUTINES = (
     "rt_draw_cells",  # M11
     "rt_text_width",  # M11 corrective: TEXTWIDTH, SECONDS
     "rt_seconds",
+    "rt_draw_font",  # M15 W2: DRAW FONT, the measured cut, ALIGN
+    "rt_cv_tw",
+    "rt_cv_text_fit",
+    "rt_cv_fits",
+    "rt_gui_stopsel",  # M15 W1: Tasks > Stop in a program with ON STOP and no menus
+    "rt_gui_stop",
+    "rt_type_font",  # M15 W3: screen typography (IF PB_TYPO)
+    "rt_ty_ready",
+    "rt_ty_want",
+    "rt_ty_px_up",
+    "rt_ty_adv",
+    "rt_ty_start",
+    "rt_ty_step",
+    "rt_type_width",
+    "rt_type_height",
+    "rt_draw_type",
+    "rt_ty_pgslot",
+    "rt_draw_on",  # M15 W4: several canvases (IF PB_CVMULTI)
+    "rt_cvm_restore",
+    "rt_cvm_next",
+    "rt_cvm_select",
+    "rt_cvm_entry",
+    "rt_cvm_save",
+    "rt_cvm_load",
+    "rt_cvm_slot",
+    "rt_cvm_win_ok",
+    "rt_cvm_mask",
+    "rt_cvm_first",
+    "rt_cvm_raw",
+    "rt_cvm_keys",
+    "rt_cvm_oe_pick",
     "rt_rbc",  # M11 runtime bank
     "rt_rbc_back",
     # M9 TEXT buffers and file names (IF PB_TEXT, PB_FNAME)
@@ -476,10 +507,18 @@ class TestTextualContract(unittest.TestCase):
                     # M9: rt_cv_raw / rt_cv_keyev read a raw mouse or key
                     # event's record, before any OS call (checked below).
                     # M12: the print lines' thickness is IX (os_meta_hline / vline)
-                    if label not in ("rt_gui_loop", "rt_gui_menu", "rt_fio_name", "rt_db_rename", "rt_bk_copy",
+                    # M15: rt_gui_stopsel reads a menu selection's title and entry likewise.
+                    if label not in ("rt_gui_loop", "rt_gui_menu", "rt_gui_stopsel", "rt_fio_name", "rt_db_rename", "rt_bk_copy",
                                      "rt_cv_raw", "rt_cv_keyev", "rt_pg_solid", "rt_pg_solid_w",
-                                     "rt_pg_vbar"):
+                                     "rt_pg_vbar", "rt_ty_d_next"):  # M15: os_typo_charscreen's style, mode
                         self.assertIsNone(re.search(r"\bix\b", line, re.IGNORECASE))
+        # M15: DRAW TYPE's IX is os_typo_charscreen's input only, kept around the call
+        lines = [re.sub(r"\s+", " ", ln).strip() for ln in routine_body("rt_draw_type")]
+        uses = [i for i, ln in enumerate(lines) if re.search(r"\bix\b", ln)]
+        self.assertEqual([lines[i] for i in uses], ["pop ix"])
+        self.assertEqual(lines[uses[0] + 1:uses[0] + 8], ["ld hl,(rt_ty_x0)", "ld de,(rt_ty_px)", "add hl,de",
+                                                         "ex de,hl", "ld hl,(rt_ty_sy)", "ld a,93",
+                                                         "call 003Bh"])
         # M9: the canvas's raw-event path reads the record and makes no OS call.
         self.assertFalse(any(re.search(r"\bcall\s+003[Bb]h?\b", ln) for ln in routine_body("rt_cv_raw")))
         # M8 rt_bk_copy: IX is only loaded, as os_copy_24bit's length input,
@@ -516,13 +555,15 @@ class TestTextualContract(unittest.TestCase):
         self.assertEqual(loop[:6], ["ld hl,0FFFFh", "IF PB_TICKPOLL", "ld a,1", "ELSE", "ld a,2", "ENDIF"])
         loop = [loop[0], loop[4]] + loop[6:]
         self.assertEqual(
-            loop[:19],
+            loop[:23],
             ["ld hl,0FFFFh", "ld a,2", "call 003Bh", "jp z,rt_gui_loop",
              "IF PB_TIMER", "bit 0,l", "jp nz,rt_gui_timer", "ENDIF",
              "IF PB_MENUS", "bit 1,l", "jp nz,rt_gui_menu", "ENDIF",
+             "IF PB_STOPNM", "bit 1,l", "jp nz,rt_gui_stopsel", "ENDIF",  # M15: Stop, no menus
              "IF PB_CANVAS", "ld a,h", "and 4Dh", "jp nz,rt_cv_raw", "ENDIF",  # M9 raw events
              "bit 5,h", "jp z,rt_gui_loop"],
         )
+        self.assertEqual(body("rt_gui_stopsel")[:4], ["ld a,(ix+3)", "ld c,a", "ld a,(ix+2)", "or c"])
         self.assertEqual(body("rt_gui_menu")[:4],
                          ["ld a,(ix+2)", "ld (rt_menu_t),a", "ld a,(ix+3)", "ld (rt_menu_e),a"])
         ix_lines = [i for i, ln in enumerate(loop) if "(ix+" in ln]
@@ -545,7 +586,7 @@ class TestTextualContract(unittest.TestCase):
             for label in CODE_ROUTINES
             if not label.startswith(("rt_fio_", "rt_bank_", "rt_bk_", "rt_code_", "rt_cl_", "rt_cv_",
                                      "rt_draw_", "rt_tx_", "rt_text_", "rt_fname", "rt_db_",
-                                     "rt_bmp_", "rt_point", "rt_pg_"))  # M7-M12: below
+                                     "rt_bmp_", "rt_point", "rt_pg_", "rt_ty_", "rt_type_"))  # M7-M15: below
             and any(re.search(r"\bcall\s+003[Bb]h?\b", ln) for ln in routine_body(label))
         ]
         self.assertEqual(
@@ -685,7 +726,19 @@ class TestTextualContract(unittest.TestCase):
                              "rt_bmp_end", "rt_bmp_blit")}
         self.assertEqual(m13, {"rt_bmp_mask": 0, "rt_bmp_part": 0, "rt_bmp_inside": 0, "rt_bmp_fetch": 0,
                                "rt_bmp_begin": 1, "rt_bmp_end": 1, "rt_bmp_blit": 0})
-        self.assertEqual(total, 132)  # M14: +2 (rt_db_own, the save's file check)
+        # M15 W2 (1 more, IF PB_DWFONT): os_dialog_string_width measuring DRAW TEXT
+        m15 = {label: sum(1 for ln in routine_body(label) if re.search(r"\bcall\s+003[Bb]h?\b", ln))
+               for label in ("rt_draw_font", "rt_cv_tw", "rt_cv_text_fit", "rt_cv_fits")}
+        self.assertEqual(m15, {"rt_draw_font": 0, "rt_cv_tw": 1, "rt_cv_text_fit": 0, "rt_cv_fits": 0})
+        # M15 W3 (19 more, IF PB_TYPO): the set-up (init, list, five byte reads), the
+        # definition (select, clr, def, info), a character's width, DRAW TYPE (mouse off,
+        # charscreen, mouse on on either way out) and, with PAGE, the PAGE font again
+        m15t = {label: sum(1 for ln in routine_body(label) if re.search(r"\bcall\s+003[Bb]h?\b", ln))
+                for label in ("rt_type_font", "rt_ty_ready", "rt_ty_want", "rt_ty_adv", "rt_draw_type",
+                              "rt_ty_pgslot", "rt_type_width", "rt_type_height")}
+        self.assertEqual(m15t, {"rt_type_font": 0, "rt_ty_ready": 7, "rt_ty_want": 4, "rt_ty_adv": 1,
+                                "rt_draw_type": 4, "rt_ty_pgslot": 3, "rt_type_width": 0, "rt_type_height": 0})
+        self.assertEqual(total, 152)  # M14: +2 (rt_db_own, the save's file check); M15: +1, +19
 
     def test_rt_put_body(self) -> None:
         # M2.1: the single guarded string writer. Writes only if
@@ -935,6 +988,9 @@ class TestPasmoAssembly(unittest.TestCase):
                 # M14: the file-safety and rounding variants are off here too (the image is full);
                 # tests/test_m14_filesafety.py and test_m14_real.py assemble them in programs
                 head += "PB_FSAFE equ 0\nPB_RSTICKY equ 0\n"
+                # M15: Stop without menus, DRAW FONT, ALIGN: assembled in programs
+                # (tests/test_m15_stop.py, test_m15_fonts.py)
+                head += "PB_STOPNM equ 0\nPB_DWFONT equ 0\nPB_DWALIGN equ 0\nPB_TYPO equ 0\nPB_TYPG equ 0\nPB_CVMULTI equ 0\n"
                 tail = "\npb_file_path: db 92,0\n" if files else ""
                 if files:  # M9: the code-bank table the linker emits
                     tail += "rt_code_tab: dw 512,0\n"

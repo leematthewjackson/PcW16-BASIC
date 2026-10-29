@@ -134,6 +134,7 @@ def build(
     legacy_timing: bool = False,
     legacy_file_safety: bool = False,
     legacy_real_rounding: bool = False,
+    legacy_tasks_stop: bool = False,
 ) -> BuildReport:
     """Compile one ``.pbas`` file end to end: frontend -> generate -> assemble.
 
@@ -168,6 +169,8 @@ def build(
     M13, without the M14 companion check, backup rule and narrower fallback
     (pbas/statements.py generate_parts). Only to rebuild accepted executables.
     *legacy_real_rounding* (M14): REAL + and - rounded as up to M13 (the same).
+    *legacy_tasks_stop* (M15): a program with menus and no ON STOP ignores
+    Tasks > Stop, as up to RC1. Only to rebuild accepted executables.
     """
     if code_banks not in codebanks.MODES:
         raise ValueError(f"code_banks must be one of {codebanks.MODES}, got {code_banks!r}")
@@ -180,7 +183,8 @@ def build(
         program = build_program(nodes, analysis)
         parts = generate_parts(program, location, legacy_menu_hotkeys=legacy_menu_hotkeys,
                                legacy_timing=legacy_timing, legacy_file_safety=legacy_file_safety,
-                               legacy_real_rounding=legacy_real_rounding)
+                               legacy_real_rounding=legacy_real_rounding,
+                               legacy_tasks_stop=legacy_tasks_stop)
     except SourceError as exc:
         raise smap.translate(exc) from None
     runtime = DEFAULT_RUNTIME_PATH if runtime_path is None else Path(runtime_path)

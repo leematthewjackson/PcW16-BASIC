@@ -78,7 +78,7 @@ def run(path, script, files=None, answers=None, banks="all"):
     r = guarded_run(path.read_text(encoding="utf-8"), events=events_for(script, table), disk=disk,
                     max_steps=STEPS, alert_answers=answers, path=path,
                     build_options={"runtime_sections": banks} if path == PATH4
-                    else {"legacy_file_safety": True})  # M14 (KI-100): CONTACTS III as accepted
+                    else {"legacy_file_safety": True, "legacy_tasks_stop": True})  # M14 (KI-100): CONTACTS III as accepted
     assert r.violations == [], r.violations[:5]
     return r
 

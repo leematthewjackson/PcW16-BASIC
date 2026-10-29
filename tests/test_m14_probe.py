@@ -120,7 +120,8 @@ class ArtefactTests(unittest.TestCase):
         art = ROOT / "artifacts" / "m14"
         listed = (art / "MANIFEST.md").read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as tmp:
-            made = package.build_programs(Path(tmp), ROOT, programs=package.PROGRAMS + package.RETEST)
+            made = package.build_programs(Path(tmp), ROOT, programs=package.PROGRAMS + package.RETEST,
+                                          legacy_stop=True)  # M15: as built for the M14 retest
             for name, _ in made:
                 data = (Path(tmp) / name).read_bytes()
                 self.assertEqual(data, (art / name).read_bytes(), name)

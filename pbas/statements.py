@@ -99,7 +99,8 @@ RUNTIME_FEATURES = ("DIV", "VAL", "ASC", "CHR", "INSTR", "CASE", "ARRAYS",
                     "TICKPOLL",  # M13 responsiveness: TIMER EVERY n TICKS run by the event loop
                     "CKCAL",  # M13 responsiveness: CLOCKTICKS counted from the seconds' change
                     "FSAFE",  # M14: file-safety corrections to DB / BITMAP SAVE and DB LOAD
-                    "RSTICKY")  # M14: REAL + and - correctly rounded (sticky bit)
+                    "RSTICKY",  # M14: REAL + and - correctly rounded (sticky bit)
+                    "TYPO")  # M15: screen typography (TYPE FONT, DRAW TYPE, TYPEWIDTH, TYPEHEIGHT)
 
 # rt_compare_signed / rt_str_compare return A in {0: DE<HL, 1: equal, 2: DE>HL};
 # a comparison is true when A is one of the operator's "wanted" values.
@@ -146,7 +147,8 @@ def generate_parts(program: Program, location: FileLocation | None = None, *,
                    legacy_menu_hotkeys: bool = False,
                    legacy_timing: bool = False,
                    legacy_file_safety: bool = False,
-                   legacy_real_rounding: bool = False) -> GeneratedProgram:
+                   legacy_real_rounding: bool = False,
+                   legacy_tasks_stop: bool = False) -> GeneratedProgram:
     """As :func:`generate`, keeping the procedure boundaries (M9).
 
     *legacy_menu_hotkeys* (M13 corrective): give a menu ITEM without KEY the
@@ -169,6 +171,10 @@ def generate_parts(program: Program, location: FileLocation | None = None, *,
     drop the bits shifted below the guard byte, as up to M13 (a result just
     under half a unit in the last place could round the wrong way). Only to
     rebuild executables accepted before M14 byte for byte.
+
+    *legacy_tasks_stop* (M15): a program with menus and no ON STOP ignores
+    Rosanne's Tasks > Stop, as up to RC1 (no Stop row in gui_menu_items). Only to rebuild
+    executables accepted before M15 byte for byte.
     """
     windows = list(program.windows or [])
     if not windows and program.dialog_title is not None:
@@ -182,6 +188,7 @@ def generate_parts(program: Program, location: FileLocation | None = None, *,
     gen.legacy_timing = legacy_timing
     gen.legacy_file_safety = legacy_file_safety
     gen.legacy_real_rounding = legacy_real_rounding
+    gen.legacy_tasks_stop = legacy_tasks_stop
     text = gen.compile()
     return GeneratedProgram(text, list(gen.w.lines), list(gen.proc_spans), gen.tail_text)
 
@@ -316,6 +323,7 @@ class _Generator:
         self.legacy_timing = False  # M13 responsiveness: see generate_parts
         self.legacy_file_safety = False  # M14: see generate_parts
         self.legacy_real_rounding = False  # M14: see generate_parts
+        self.legacy_tasks_stop = False  # M15: see generate_parts
         self.uses_fsafe = False  # M14: DB LOAD, DB SAVE or BITMAP SAVE (PB_FSAFE)
         self.layout = layout
         self.layouts = layouts if layouts is not None else ([layout] if layout else [])
@@ -348,10 +356,16 @@ class _Generator:
         }
         # M9: the window holding the program's CANVAS (index, layout), if any
         self.canvas = next(((i, lay) for i, lay in enumerate(self.layouts) if lay.canvas), None)
+        # M15: every canvas (window index, layout, its canvas tuple), in source order;
+        # with two or more, the runtime's PB_CVMULTI table (one keeps the RC1 descriptor)
+        self.canvas_list = [(i, lay, cv) for i, lay in enumerate(self.layouts) for cv in lay.canvases]
+        self.cv_multi = len(self.canvas_list) > 1
+        self.cv_index = {cv[5].canvas_name: k for k, (_, _, cv) in enumerate(self.canvas_list)
+                         if cv[5].canvas_name}
         # The Phase 1 and 2 dialog parts run inside the binding machinery
         # (M9: so do canvas handlers, which need rt_gui_after).
-        self.bindings_on = bool(rows) or self.canvas is not None or any(
-            self.p1[k] for k in ("POST", "MENUS", "TIMER", "RADIO", "NUMBERS"))
+        self.bindings_on = bool(rows) or self.canvas is not None or bool(self.program.on_stop) or any(
+            self.p1[k] for k in ("POST", "MENUS", "TIMER", "RADIO", "NUMBERS"))  # M15: ON STOP's handler too
         sliders = [r for r in rows if r.kind == BIND_SLIDER]
         if len(sliders) > MAX_SLIDERS:
             extra = sliders[MAX_SLIDERS]
@@ -375,6 +389,8 @@ class _Generator:
         self.uses_slice = False  # M5a run-time substring arguments (PB_SLICE)
         self.uses_cv_line = False  # M9 KI-49: DRAW LINE draws sloped lines as runs (PB_CVLINE)
         self.uses_cv_cell = False  # M11: DRAW TEXT with a cell width (PB_CVCELL)
+        self.uses_dw_font = False  # M15: DRAW FONT (PB_DWFONT)
+        self.uses_dw_align = False  # M15: DRAW TEXT ... ALIGN (PB_DWALIGN)
         self.db_arrays: set[str] = set()  # M10: record arrays used as databases (cgdb_ tables)
         self.features: set[str] = set()  # M5b: RUNTIME_FEATURES used
         self.loops: list[tuple[str, str]] = []  # M7: open loops (kind, end label)
@@ -415,8 +431,15 @@ class _Generator:
             w.kind == "BUTTON" and w.default for w in self.program.widgets)
         tail.emit(f"PB_LABELS equ {1 if labels else 0}", f"PB_KEYS equ {1 if keys else 0}")
         tail.emit(f"PB_CANVAS equ {0 if self.canvas is None else 1}")  # M9
+        tail.emit(f"PB_CVMULTI equ {1 if self.cv_multi else 0}")  # M15: several canvases
+        # M15: Tasks > Stop (title 0, entry 0): a menu row (gui_menu_items), or PB_STOPNM
+        tail.emit(f"PB_STOPNM equ {1 if self.program.on_stop and not self.p1['MENUS'] else 0}")
         tail.emit(f"PB_CVLINE equ {1 if self.uses_cv_line else 0}")  # M9 KI-49
         tail.emit(f"PB_CVCELL equ {1 if self.uses_cv_cell else 0}")  # M11
+        tail.emit(f"PB_DWFONT equ {1 if self.uses_dw_font or self.uses_dw_align else 0}",  # M15
+                  f"PB_DWALIGN equ {1 if self.uses_dw_align else 0}",
+                  # M15: screen typography's lines for a program that also prints (slot 0 shared)
+                  f"PB_TYPG equ {1 if {'TYPO', 'PAGE'} <= self.features else 0}")
         # M6 Phase 1 runtime parts (LANGUAGE-SPEC 5.1)
         for name, on in self.p1.items():
             tail.emit(f"PB_{name} equ {1 if on else 0}")
@@ -593,13 +616,28 @@ class _Generator:
         fields of its window."""
         if self.canvas is None:
             return
-        index, layout = self.canvas
-        number, sx, sy, width, height, widget = layout.canvas
-        window = index + 1 if self.p1["WINDOWS"] else 0
 
         def handler(name):
             return f"sub_{mangle(name)}" if name else "0"
 
+        if self.cv_multi:  # M15: the table rt_cvm_select copies the current canvas from
+            self.w.emit("    ; CANVASes (PB_CVMULTI): count; each as cgcanvas (16 bytes), then its",
+                        "    ; window's text fields; cgcanvas is the copy of the current one (rt_cvm_select)",
+                        "cgcanvas: defs 16",
+                        f"cgcv_tab: db {len(self.canvas_list)}")
+            for index, layout, (number, sx, sy, width, height, widget) in self.canvas_list:
+                window = index + 1 if self.p1["WINDOWS"] else 0
+                self.w.emit(f"    ; CANVAS {widget.canvas_name}",
+                            f"    dw {sx},{sy},{width},{height}",
+                            f"    dw {handler(widget.paint)},{handler(widget.mouse)},{handler(widget.keys_handler)}",
+                            f"    db {number},{window}", f"    dw cgcv_ed_{index}")
+            for index in sorted({i for i, _, _ in self.canvas_list}):
+                edits = [o.number for o in self.layouts[index].objects if o.kind in ("TEXTBOX", "NUMBER")]
+                self.w.emit(f"cgcv_ed_{index}: db " + ",".join(str(n) for n in [len(edits)] + edits))
+            return
+        index, layout = self.canvas
+        number, sx, sy, width, height, widget = layout.canvas
+        window = index + 1 if self.p1["WINDOWS"] else 0
         edits = [o.number for o in layout.objects if o.kind in ("TEXTBOX", "NUMBER")]
         self.w.emit("    ; CANVAS: screen x, y, width, height; PAINT, MOUSE, KEYS; frame, window",
                     f"cgcanvas: dw {sx},{sy},{width},{height}",
@@ -607,9 +645,27 @@ class _Generator:
                     f"    db {number},{window}",
                     "cgcv_edits: db " + ",".join(str(n) for n in [len(edits)] + edits))
 
+    def _stop_on(self) -> bool:
+        """M15: does the program act on Tasks > Stop? With ON STOP always; a
+        program with menus also without (it then ends), unless legacy."""
+        return bool(self.program.on_stop) or (self.p1["MENUS"] and not self.legacy_tasks_stop)
+
+    def _stop_hook(self) -> None:
+        """M15: cgstop_hook, run by the runtime on Tasks > Stop for ON STOP F:
+        call F, end the program if it returned TRUE (as EXIT does), else
+        return to the event loop. (TRUE is 1, FALSE 0: the low byte decides.)"""
+        name = self.program.on_stop
+        self.w.emit("cgstop_hook:", f"    call sub_{mangle(name)}",
+                    f"    ld a,(var_{mangle(name + '..R')})", "    or a",
+                    "    jp nz,rt_exit", "    ret")
+
     def draw(self, item: ast.Draw) -> None:
         """M9 DRAW: the arguments into rt_dw_args (words), then the routine."""
         w = self.w
+        if item.op == "ON":  # M15: one canvas is always the target; several: the runtime's
+            if self.cv_multi:
+                w.emit(f"    ld hl,{self.cv_index[item.target]}", "    call rt_draw_on")
+            return
         w.emit(f"    ld hl,{item.line}", "    ld (rt_err_line),hl")
         if item.op == "LINE":
             self.uses_cv_line = True
@@ -617,12 +673,24 @@ class _Generator:
             # `ld (hl),n`, not `ld a,n`, as for SHOW (asmcheck A4)
             w.emit("    ld hl,rt_dw_ink", f"    ld (hl),{('BLACK', 'WHITE', 'XOR').index(item.ink)}")
             return
-        numbers = item.values[:2] + item.values[3:] if item.op == "TEXT" else item.values
+        numbers = item.values[:2] + item.values[3:] if item.op in ("TEXT", "TYPE") else item.values
         for i, value in enumerate(numbers):
             self.expr(value)
             w.emit(f"    ld (rt_dw_args+{2 * i}),hl")
         if item.op == "FILL" and len(item.values) == 4:
             w.emit("    ld hl,0", "    ld (rt_dw_args+8),hl")  # default shade: black
+        if item.op == "FONT":  # M15
+            self.uses_dw_font = True
+        if item.op == "TYPE":  # M15 screen typography
+            self.features.add("TYPO")
+            buf = self._string_ptr(item.values[2])
+            w.emit("    call rt_draw_type")
+            if buf is not None:
+                self._scratch_release(buf)
+            return
+        if item.op == "TEXT" and item.align in ("CENTRE", "RIGHT"):  # M15: measured, then drawn left
+            self.uses_dw_align = True
+            w.emit("    ld hl,rt_dw_align", f"    ld (hl),{1 if item.align == 'CENTRE' else 2}")
         if item.op == "TEXT":
             buf = self._string_ptr(item.values[2])
             if len(item.values) == 4:  # M11: each character in a cell of the given width
@@ -797,12 +865,19 @@ class _Generator:
                                   f"{MENU_AREA} for the whole menu bar")
             w.emit("    ; menu bar after the Tasks menu (ROSAN283 os_ddm_define format)",
                    "gui_menu_def:", "    db " + ",".join(str(b) for b in data), "gui_menu_def_end:")
-            w.emit("gui_menu_items:", f"    db {len(items)}")
+            stop = []
+            if self._stop_on():  # M15: Tasks (title 0) > Stop (entry 0), found like an item
+                stop = [("    db 0,0", "    dw cgstop_hook" if program.on_stop else "    dw rt_exit")]
+            w.emit("gui_menu_items:", f"    db {len(items) + len(stop)}")
             for title_no, entry, handler in items:
                 w.emit(f"    db {title_no},{entry}", f"    dw sub_{mangle(handler)}")
+            for row in stop:
+                w.emit(*row)
             w.emit("gui_menu_ticks:", f"    db {len(ticks)}")
             for title_no, entry, var in ticks:
                 w.emit(f"    db {title_no},{entry}", f"    dw var_{mangle(var)}")
+        if self.program.on_stop:
+            self._stop_hook()
         if program.timer is not None:
             # os_set_timer record: +2 timer 0, +3 repeating, +4 1/16 s units
             w.emit("gui_timer_rec:", "    dw 1", "    db 0,1",
@@ -868,6 +943,16 @@ class _Generator:
         elif isinstance(item, ast.PageOp):  # M12 printing
             self.w.annotate(item.line)
             self.page_statement(item)
+        elif isinstance(item, ast.TypeFont):  # M15 screen typography
+            self.w.annotate(item.line)
+            self.features.add("TYPO")
+            w = self.w
+            w.emit(f"    ld hl,{item.line}", "    ld (rt_err_line),hl")
+            self.expr(item.value)
+            style = (1 if item.bold else 0) | (2 if item.italic else 0)
+            family = 1 if item.family == "TIMES" else 2  # RTF families (ROSAN283 os_typo_getlist)
+            w.emit("    ld (rt_dw_args),hl", f"    ld hl,{style * 256 + family}", "    ld (rt_dw_args+2),hl",
+                   "    call rt_type_font")
         elif isinstance(item, ast.Beep):  # M6
             self.w.annotate(item.line)
             self.w.emit("    call rt_beep")
@@ -1197,6 +1282,14 @@ class _Generator:
         return held
 
     def focus(self, node: ast.Focus) -> None:
+        for k, (index, layout, canvas) in enumerate(self.canvas_list):  # M15: FOCUS Canvas
+            if canvas[5].canvas_name == node.name:
+                self.w.emit("    ld hl,rt_focus_obj", f"    ld (hl),{canvas[0]}")  # its frame (KI-87)
+                if self.p1["WINDOWS"]:
+                    self.w.emit("    ld hl,rt_focus_win", f"    ld (hl),{index + 1}")
+                if self.cv_multi:
+                    self.w.emit("    ld hl,rt_cvm_focus", f"    ld (hl),{k + 1}")
+                return
         for index, layout in enumerate(self.layouts):
             for row in layout.bindings:
                 if row.var_name == node.name and row.kind in (1, 2, BIND_NUMBER):
@@ -1784,6 +1877,13 @@ class _Generator:
                        "    ld a,(hl)", "    inc hl", "    ld h,(hl)", "    ld l,a")
             else:
                 w.emit(f"    ld hl,(var_{mangle(e.args[0].name)}+{offset})")
+            return
+        if e.name in ("TYPEWIDTH", "TYPEHEIGHT"):  # M15 screen typography
+            self.features.add("TYPO")
+            buf = self._string_ptr(e.args[0], prefer=SCRATCH_BUFFERS[1]) if e.args else None
+            w.emit("    call rt_type_width" if e.args else "    call rt_type_height")
+            if buf is not None:
+                self._scratch_release(buf)
             return
         if e.name == "PAGEWIDTH":  # M12 printing
             self.features.update(("PAGE", "FIO"))

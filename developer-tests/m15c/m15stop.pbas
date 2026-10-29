@@ -1,0 +1,44 @@
+' M15STOP: M15c acceptance for W1, Tasks > Stop with ON STOP
+' (docs/M15C-ACCEPTANCE.md, steps S1-S4). Choose what the program does on
+' Tasks > Stop, then choose Tasks > Stop from Rosanne's Tasks menu. The
+' label counts the Stop requests that arrived; option 4
+' writes M15STOP.TXT just before the program ends.
+DIM Mode AS INTEGER
+DIM Stops AS INTEGER
+DIM Seen$ AS STRING * 24
+DIM A AS INTEGER
+WINDOW "M15 Stop test", LARGE
+LABEL "On Tasks > Stop:"
+RADIO Mode, "1 End at once", "2 Stay open", "3 Ask first", "4 Write M15STOP.TXT, end"
+LABEL Seen$
+BUTTON "Quit", Quit
+MENU "File"
+    ITEM "Quit", Quit
+END MENU
+ON STOP MayStop
+
+FUNCTION MayStop() AS BOOLEAN
+    Stops = Stops + 1
+    Seen$ = "Stop requests: " + STR$(Stops)
+    SELECT CASE Mode
+    CASE 2
+        RETURN FALSE
+    CASE 3
+        A = ASK("Tasks > Stop: end M15STOP?", "End", "Stay")
+        RETURN A = 1
+    CASE 4
+        OPEN "M15STOP.TXT" FOR OUTPUT AS #1
+        PRINT #1, "M15STOP ended by Tasks > Stop, request " + STR$(Stops)
+        CLOSE #1
+        RETURN IOERR = 0
+    END SELECT
+    RETURN TRUE
+END FUNCTION
+
+SUB Quit
+    EXIT
+END SUB
+
+Mode = 1
+Seen$ = "Stop requests: 0"
+END

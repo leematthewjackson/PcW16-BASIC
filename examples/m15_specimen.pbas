@@ -1,0 +1,194 @@
+' Type specimen (M15 example): the M15 features together. Type a sample,
+' pick a size on the strip of sizes (a click, or Left / Right when the strip
+' has the keyboard), choose Swiss or Times, bold and italic from the Type
+' menu; the preview shows the sample in Rosanne's scalable type with its
+' measured width, and its caption in a small dialog font. Print sets the
+' sample at four sizes on one page. Rosanne's Tasks > Stop asks first.
+'   M15 W1  ON STOP       W2  DRAW FONT, DRAW TEXT ... ALIGN
+'   M15 W3  TYPE FONT, DRAW TYPE, TYPEWIDTH, TYPEHEIGHT
+'   M15 W4  two canvases (CANVAS Name), DRAW ON, FOCUS
+' Only the 10-point screen type is shown in XAnne so far (M15a T4); the
+' other sizes are for the M15c acceptance session (docs/M15C-ACCEPTANCE.md).
+DIM Sample$ AS STRING * 40
+DIM Sizes(10) AS INTEGER
+DIM SizeK AS INTEGER
+DIM Swiss AS BOOLEAN
+DIM Bold AS BOOLEAN
+DIM Italic AS BOOLEAN
+DIM S AS INTEGER
+DIM W AS INTEGER
+DIM H AS INTEGER
+DIM N AS INTEGER
+DIM Y AS INTEGER
+DIM A AS INTEGER
+DIM Caption$ AS STRING * 50
+WINDOW "Type specimen", LARGE
+TEXTBOX Sample$, "Sample"
+CANVAS SizeStrip, 560, 24, PAINT StripPaint, MOUSE StripMouse, KEYS StripKeys
+CANVAS Preview, 560, 190, PAINT PreviewPaint
+BUTTON "Show", Show, DEFAULT
+BUTTON "Print", PrintIt
+BUTTON "Quit", Quit
+MENU "File"
+    ITEM "Show", Show
+    ITEM "Print", PrintIt
+    ITEM "Quit", Quit
+END MENU
+MENU "Type"
+    ITEM "Swiss (else Times)", Family, TICK Swiss
+    ITEM "Bold", ToggleBold, TICK Bold
+    ITEM "Italic", ToggleItalic, TICK Italic
+    ITEM "Sizes take keys", KeysToStrip
+END MENU
+ON STOP MayEnd
+
+SUB StripPaint
+    DRAW CLEAR
+    DRAW FONT 7
+    FOR N = 1 TO 10
+        DRAW TEXT N * 56 - 28, 4, STR$(Sizes(N)) ALIGN CENTRE
+    NEXT N
+    DRAW INVERT SizeK * 56 - 56, 0, 56, 24
+END SUB
+
+SUB StripMouse
+    IF MOUSEEVENT = 1 AND MOUSEX >= 0 AND MOUSEX < 560 THEN
+        SizeK = MOUSEX / 56 + 1
+        CALL Redraw
+    END IF
+END SUB
+
+SUB StripKeys
+    IF KEYCODE = 226 AND SizeK > 1 THEN
+        SizeK = SizeK - 1
+    END IF
+    IF KEYCODE = 227 AND SizeK < 10 THEN
+        SizeK = SizeK + 1
+    END IF
+    CALL Redraw
+END SUB
+
+SUB SetFont
+    S = Sizes(SizeK)
+    N = 0
+    IF Bold THEN
+        N = 1
+    END IF
+    IF Italic THEN
+        N = N + 2
+    END IF
+    IF NOT Swiss THEN
+        N = N + 4
+    END IF
+    SELECT CASE N
+    CASE 0
+        TYPE FONT SWISS, S
+    CASE 1
+        TYPE FONT SWISS, S, BOLD
+    CASE 2
+        TYPE FONT SWISS, S, ITALIC
+    CASE 3
+        TYPE FONT SWISS, S, BOLD, ITALIC
+    CASE 4
+        TYPE FONT TIMES, S
+    CASE 5
+        TYPE FONT TIMES, S, BOLD
+    CASE 6
+        TYPE FONT TIMES, S, ITALIC
+    CASE ELSE
+        TYPE FONT TIMES, S, BOLD, ITALIC
+    END SELECT
+END SUB
+
+SUB PreviewPaint
+    DRAW CLEAR
+    CALL SetFont
+    DRAW TYPE 8, 8, Sample$
+    W = TYPEWIDTH(Sample$)
+    H = TYPEHEIGHT
+    IF W > 544 THEN
+        W = 544
+    END IF
+    IF W > 0 THEN
+        DRAW FILL 8, 8 + H + 4, W, 2
+    END IF
+    Caption$ = "Swiss"
+    IF NOT Swiss THEN
+        Caption$ = "Times"
+    END IF
+    Caption$ = Caption$ + " " + STR$(S) + " points: " + STR$(TYPEWIDTH(Sample$)) + " x " + STR$(H) + " pixels"
+    DRAW FONT 3
+    DRAW TEXT 552, 170, Caption$ ALIGN RIGHT
+END SUB
+
+SUB Redraw
+    DRAW ON SizeStrip
+    CALL StripPaint
+    DRAW ON Preview
+    CALL PreviewPaint
+END SUB
+
+SUB Show
+    CALL Redraw
+END SUB
+
+SUB Family
+    Swiss = NOT Swiss
+    CALL Redraw
+END SUB
+
+SUB ToggleBold
+    Bold = NOT Bold
+    CALL Redraw
+END SUB
+
+SUB ToggleItalic
+    Italic = NOT Italic
+    CALL Redraw
+END SUB
+
+SUB KeysToStrip
+    FOCUS SizeStrip
+END SUB
+
+SUB PrintIt
+    PAGE NEW
+    Y = 0
+    FOR N = 3 TO 8 STEP 2
+        IF Bold THEN
+            PAGE FONT Sizes(N), BOLD
+        ELSE
+            PAGE FONT Sizes(N)
+        END IF
+        PAGE TEXT 0, Y, Sample$
+        Y = Y + Sizes(N) + 10
+    NEXT N
+    PAGE PRINT
+    IF IOERR <> 0 THEN
+        MESSAGE "The specimen was not printed (IOERR " + STR$(IOERR) + ")"
+    END IF
+END SUB
+
+FUNCTION MayEnd() AS BOOLEAN
+    A = ASK("End the type specimen?", "End", "Stay")
+    RETURN A = 1
+END FUNCTION
+
+SUB Quit
+    EXIT
+END SUB
+
+Sizes(1) = 6
+Sizes(2) = 8
+Sizes(3) = 10
+Sizes(4) = 11
+Sizes(5) = 12
+Sizes(6) = 14
+Sizes(7) = 18
+Sizes(8) = 24
+Sizes(9) = 36
+Sizes(10) = 72
+SizeK = 3
+Swiss = TRUE
+Sample$ = "Rosanne sets type"
+END

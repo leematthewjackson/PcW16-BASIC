@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pcw16basic"
-version = "1.0.0rc1"
+version = "1.0.0rc2"
 description = "PcW16 BASIC: a BASIC cross-compiler for the Amstrad PcW16 (Rosanne)"
 readme = "README.md"
 requires-python = ">=3.10"

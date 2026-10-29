@@ -1,0 +1,177 @@
+' M15CANV: M15c acceptance for W4, several canvases (docs/M15C-ACCEPTANCE.md,
+' steps C1-C6). Main window: a Palette canvas (8 shades; a click picks one,
+' Left / Right step it when the Palette has the keyboard) above a Board
+' canvas (drag to draw in the shade; the arrow keys move a box when the
+' Board has the keyboard). The label says which canvas each event reached:
+' P (Palette) or B (Board), the mouse event and position; Pk / Bk a key code;
+' s the shade.
+' Keys: Palette / Keys: Board give that canvas the keyboard (FOCUS); a press
+' on a canvas does too. Mark both inverts both canvases from one button
+' (DRAW ON). Alert shows a message: both canvases are drawn again after it.
+' r2 (M15c C5): the Board keeps its first 250 squares and its PAINT draws them
+' again, so a repaint (after the alert, after Window 2) restores the drawing.
+' The runtime repaints; keeping what was drawn is the program's job.
+' Window 2 has a canvas of its own (font 12); Back returns. The Board's
+' text is font 4 and the Palette's font 2: each canvas keeps its own.
+DIM Info$ AS STRING * 24
+DIM Shade AS INTEGER
+DIM BX AS INTEGER
+DIM BY AS INTEGER
+DIM N AS INTEGER
+DIM SX(250) AS INTEGER
+DIM SY(250) AS INTEGER
+DIM SS(250) AS INTEGER
+DIM NS AS INTEGER
+WINDOW Main, "M15 Canvases", LARGE
+LABEL Info$
+CANVAS Palette, 560, 36, PAINT PalPaint, MOUSE PalMouse, KEYS PalKeys
+CANVAS Board, 560, 200, PAINT BoardPaint, MOUSE BoardMouse, KEYS BoardKeys
+BUTTON "Keys: Palette", KeysPalette
+BUTTON "Keys: Board", KeysBoard
+BUTTON "Mark both", MarkBoth
+BUTTON "Alert", Alert
+BUTTON "Window 2", ToSecond
+BUTTON "Quit", Quit
+MENU "File"
+    ITEM "Clear board", ClearBoard
+    ITEM "Quit", Quit
+END MENU
+WINDOW Second, "M15 Second window", LARGE
+LABEL "This window's canvas is drawn by its own PAINT."
+CANVAS Note, 400, 100, PAINT NotePaint, MOUSE NoteMouse
+BUTTON "Back", ToMain
+
+SUB PalPaint
+    DRAW CLEAR
+    DRAW FONT 2
+    FOR N = 0 TO 7
+        DRAW FILL N * 70 + 3, 3, 64, 16, N
+        DRAW TEXT N * 70 + 3, 20, "shade " + STR$(N)
+    NEXT N
+    DRAW BOX Shade * 70, 0, 70, 36
+    DRAW BOX Shade * 70 + 1, 1, 68, 34
+END SUB
+
+SUB PalMouse
+    IF MOUSEEVENT = 1 AND MOUSEX >= 0 AND MOUSEX < 560 THEN
+        Shade = MOUSEX / 70
+        CALL PalPaint
+    END IF
+    Info$ = "P" + STR$(MOUSEEVENT) + " " + STR$(MOUSEX) + "," + STR$(MOUSEY) + " s" + STR$(Shade)
+END SUB
+
+SUB PalKeys
+    IF KEYCODE = 226 AND Shade > 0 THEN
+        Shade = Shade - 1
+    END IF
+    IF KEYCODE = 227 AND Shade < 7 THEN
+        Shade = Shade + 1
+    END IF
+    CALL PalPaint
+    Info$ = "Pk" + STR$(KEYCODE) + " s" + STR$(Shade)
+END SUB
+
+SUB BoardPaint
+    DRAW CLEAR
+    DRAW FONT 4
+    DRAW TEXT 4, 4, "Board: drag to draw; the arrow keys move the box"
+    FOR N = 1 TO NS
+        DRAW FILL SX(N), SY(N), 4, 4, SS(N)
+    NEXT N
+    DRAW INK XOR
+    DRAW BOX BX, BY, 12, 12
+    DRAW INK BLACK
+END SUB
+
+SUB BoardMouse
+    IF MOUSEX >= 0 AND MOUSEX <= 556 AND MOUSEY >= 0 AND MOUSEY <= 196 THEN
+        DRAW FILL MOUSEX, MOUSEY, 4, 4, Shade
+        IF NS < 250 THEN
+            NS = NS + 1
+            SX(NS) = MOUSEX
+            SY(NS) = MOUSEY
+            SS(NS) = Shade
+        END IF
+    END IF
+    Info$ = "B" + STR$(MOUSEEVENT) + " " + STR$(MOUSEX) + "," + STR$(MOUSEY)
+END SUB
+
+SUB BoardKeys
+    DRAW INK XOR
+    DRAW BOX BX, BY, 12, 12
+    IF KEYCODE = 224 AND BY >= 4 THEN
+        BY = BY - 4
+    END IF
+    IF KEYCODE = 225 AND BY <= 184 THEN
+        BY = BY + 4
+    END IF
+    IF KEYCODE = 226 AND BX >= 4 THEN
+        BX = BX - 4
+    END IF
+    IF KEYCODE = 227 AND BX <= 544 THEN
+        BX = BX + 4
+    END IF
+    DRAW BOX BX, BY, 12, 12
+    DRAW INK BLACK
+    Info$ = "Bk" + STR$(KEYCODE) + " " + STR$(BX) + "," + STR$(BY)
+END SUB
+
+SUB KeysPalette
+    FOCUS Palette
+    Info$ = "Keys: Palette"
+END SUB
+
+SUB KeysBoard
+    FOCUS Board
+    Info$ = "Keys: Board"
+END SUB
+
+SUB MarkBoth
+    DRAW ON Palette
+    DRAW INVERT 0, 0, 560, 36
+    DRAW ON Board
+    DRAW INVERT 0, 0, 560, 200
+    Info$ = "Marked both"
+END SUB
+
+SUB ClearBoard
+    NS = 0
+    DRAW ON Board
+    CALL BoardPaint
+    Info$ = "Board cleared"
+END SUB
+
+SUB Alert
+    MESSAGE "After this alert both canvases are drawn again."
+    Info$ = "Alert closed"
+END SUB
+
+SUB NotePaint
+    DRAW CLEAR
+    DRAW FONT 12
+    DRAW TEXT 8, 8, "Second window"
+    DRAW BOX 0, 0, 400, 100
+END SUB
+
+SUB NoteMouse
+    IF MOUSEEVENT = 1 THEN
+        DRAW INVERT MOUSEX, MOUSEY, 1, 1
+    END IF
+END SUB
+
+SUB ToSecond
+    SHOW Second
+END SUB
+
+SUB ToMain
+    SHOW Main
+END SUB
+
+SUB Quit
+    EXIT
+END SUB
+
+BX = 280
+BY = 100
+Info$ = "Press a canvas"
+END

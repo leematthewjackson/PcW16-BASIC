@@ -441,6 +441,10 @@ rt_gui_loop:
     bit 1,l
     jp nz,rt_gui_menu
     ENDIF
+    IF PB_STOPNM
+    bit 1,l                     ; M15: no menus of its own, but ON STOP: the
+    jp nz,rt_gui_stopsel        ; Tasks menu's selections
+    ENDIF
     IF PB_CANVAS
     ld a,h
     and 4Dh                     ; M9: keyboard, left click / release, movement
@@ -569,6 +573,34 @@ rt_gui_process:
     ld a,4
     call 003Bh
     jp rt_gui_loop
+
+    IF PB_STOPNM
+; ----------------------------------------------------------------------------
+; M15 Tasks > Stop (LANGUAGE-SPEC 6.1; docs/M15A-PROBE.md). Rosanne does not
+; send om_exit for it: the choice arrives as a menu selection, title 0 (the
+; Tasks menu the runtime puts first, rt_menu_init), entry 0 (Stop), and is
+; the application's to act on (owner XAnne, M15a r4 X3/X4, r5 Y1-Y3).
+; A program with menus finds it in its own gui_menu_items: the compiler adds
+; the row title 0, entry 0 with rt_exit (no ON STOP: the program ends) or
+; cgstop_hook (ON STOP F: calls F and ends the program if F returned TRUE,
+; or returns), so rt_gui_menu needs no code of its own. A program without
+; menus but with ON STOP comes here (PB_STOPNM).
+; ----------------------------------------------------------------------------
+rt_gui_stopsel:                 ; no menus of its own: a selection event, IX = its record
+    ld a,(ix+3)
+    ld c,a
+    ld a,(ix+2)
+    or c
+    jp z,rt_gui_stop
+    jp rt_gui_loop              ; any other Tasks entry: left to Rosanne
+rt_gui_stop:
+    IF PB_NUMBERS
+    ld a,1
+    ld (rt_sync_strict),a       ; as a menu choice (rt_gui_menu)
+    ENDIF
+    ld hl,cgstop_hook
+    jp rt_gui_dispatch
+    ENDIF
 
 ; ============================================================================
 ; Control bindings (M3b): TEXTBOX <-> STRING, CHECKBOX <-> BOOLEAN
@@ -3754,7 +3786,11 @@ rt_tw_end:
     ld (rt_tw_buf+1),a          ; left-aligned
     ld (rt_tw_buf+2),a          ; style 0
     ld (rt_tw_buf+3),a          ; mode 0
+    IF PB_DWFONT
+    ld a,(rt_dw_font)           ; M15: the DRAW FONT
+    ELSE
     ld a,7
+    ENDIF
     ld (rt_tw_buf),a            ; font 7
     call 0CBh                   ; bios_getmem1: the block holding rt_tw_buf
     ld c,a
@@ -9538,6 +9574,18 @@ RT_CV_TEXT_H equ 16             ; font-7 line height (pbas/layout.py LABEL_GLYPH
 ; rt_cv_open — the canvas's window is on screen (from rt_gui_run): allow
 ; drawing and run PAINT. Reached by jp; continues to the event loop.
 rt_cv_open:
+    IF PB_CVMULTI
+    call rt_cvm_mask            ; M15: every canvas of the window on screen
+    or a
+    jp z,rt_gui_loop            ; none in this window
+    ld (rt_cvm_pend),a          ; each one's PAINT, in turn (rt_cvm_next)
+    ld a,1
+    ld (rt_cv_on),a
+    xor a
+    ld (rt_cv_down),a
+    ld (rt_cv_dirty),a
+    jp rt_cvm_next
+    ELSE
     ld a,(cgcanvas+15)
     or a
     jp z,rt_cv_open_yes
@@ -9552,6 +9600,7 @@ rt_cv_open_yes:
     xor a
     ld (rt_cv_down),a
     ld (rt_cv_dirty),a
+    ENDIF
 rt_cv_paint:
     ld a,1
     ld (rt_cv_painting),a       ; an alert during PAINT asks for no repaint
@@ -9572,6 +9621,17 @@ rt_cv_after:
     ld (rt_cv_painting),a
     ld a,(rt_cv_dirty)
     or a
+    IF PB_CVMULTI
+    jp z,rt_cvm_next            ; M15: the next PAINT due, or back to the target
+    xor a
+    ld (rt_cv_dirty),a
+    ld a,(rt_cv_on)
+    or a
+    jp z,rt_cvm_next
+    call rt_cvm_mask            ; every canvas on screen is repainted
+    ld (rt_cvm_pend),a
+    jp rt_cvm_next
+    ELSE
     jp z,rt_gui_loop
     xor a
     ld (rt_cv_dirty),a
@@ -9579,6 +9639,7 @@ rt_cv_after:
     or a
     jp z,rt_gui_loop
     jp rt_cv_paint
+    ENDIF
 
 ; rt_cv_raw — a raw mouse or key event (HL = event code, IX = record).
 rt_cv_raw:
@@ -9592,6 +9653,10 @@ rt_cv_raw:
     ld d,(ix+7)
     ld l,(ix+8)
     ld h,(ix+9)
+    IF PB_CVMULTI
+    call rt_cvm_raw             ; M15: the canvas pressed, or the one held (C: none)
+    jp c,rt_gui_loop
+    ENDIF
     call rt_cv_local
     ld a,(rt_cv_code+1)
     bit 0,a
@@ -9630,6 +9695,10 @@ rt_cv_mouse:
     ld hl,(cgcanvas+10)
     jp rt_cv_run
 rt_cv_keyev:
+    IF PB_CVMULTI
+    call rt_cvm_keys            ; M15: the keyboard's canvas (C: none on screen)
+    jp c,rt_gui_loop
+    ENDIF
     ld l,(ix+2)
     ld h,0
     ld (rt_cv_key),hl
@@ -9668,6 +9737,17 @@ rt_cv_inside:
 ; rt_cv_objevent — after os_process_event for an om_objevent: out HL = the
 ; canvas handler the event calls for (0 = none: handled as before).
 rt_cv_objevent:
+    IF PB_CVMULTI
+    call rt_cvm_oe_pick         ; M15: the canvas clicked, or the keyboard's
+    ld hl,0
+    ret c
+    call rt_cv_oe_one
+    ld a,h
+    or l
+    ret nz
+    jp rt_cvm_restore           ; not for it after all: the target again (HL = 0)
+rt_cv_oe_one:
+    ENDIF
     ld hl,0
     ld a,(rt_cv_on)
     or a
@@ -9701,7 +9781,11 @@ rt_cv_oe_key:
     ld a,h
     or l
     ret z                       ; no KEYS handler
+    IF PB_CVMULTI
+    ld hl,(rt_cv_edp)           ; M15: the current canvas's window's text fields
+    ELSE
     ld hl,cgcv_edits
+    ENDIF
     ld b,(hl)
     ld a,(rt_gui_object)
     ld c,a
@@ -9746,6 +9830,330 @@ rt_cv_oe_code:
 rt_cv_cursor_keys:              ; ROSAN283 Appendix A: Up, Down, Home, End, PgUp, PgDn
     db 0E0h,0E1h,0E6h,0E7h,0E8h,0E9h
 
+    IF PB_CVMULTI
+; ----------------------------------------------------------------------------
+; M15 W4 several canvases (LANGUAGE-SPEC 5.6). Generated: cgcv_tab: db n,
+; then per canvas the 16 bytes of a cgcanvas descriptor and dw its window's
+; text fields (cgcv_ed_k), and cgcanvas: defs 16, the working copy of the
+; current canvas, so every drawing routine above and below is unchanged:
+; rt_cvm_select copies a canvas in (keeping each canvas's DRAW FONT and TYPE
+; FONT, rt_cvm_state). rt_cvm_sel is the DRAW ON target; a canvas's own
+; PAINT, MOUSE and KEYS handlers run with it as the target, which is put
+; back after every handler (rt_cvm_next). A press goes to the canvas under
+; the pointer (and gives it the keyboard), movement and release to the
+; canvas pressed, keys to the keyboard's canvas (the last pressed, or FOCUS,
+; or the window's first). A canvas is on screen when its window is.
+; ----------------------------------------------------------------------------
+RT_CVM_ROW equ 18
+RT_CVM_S equ PB_DWFONT+PB_TYPO+PB_TYPO+PB_TYPO+PB_TYPO
+
+; DRAW ON Name — HL = the canvas's number (0..n-1).
+rt_draw_on:
+    ld a,l
+    ld (rt_cvm_sel),a
+    jp rt_cvm_select
+
+; rt_cvm_restore — the DRAW ON target again; HL kept.
+rt_cvm_restore:
+    push hl
+    ld a,(rt_cvm_sel)
+    call rt_cvm_select
+    pop hl
+    ret
+
+; rt_cvm_next — after a handler (from rt_cv_after) or when a window opens:
+; the PAINT of the next canvas in rt_cvm_pend (bit k = canvas k), else the
+; DRAW ON target again and the event loop.
+rt_cvm_next:
+    ld a,(rt_cvm_pend)
+    or a
+    jp z,rt_cvm_back
+    ld c,a
+    dec a
+    and c
+    ld (rt_cvm_pend),a          ; the lowest bit cleared
+    xor c                       ; and kept alone in A
+    ld b,0
+rt_cvm_nx_bit:
+    rra
+    jp c,rt_cvm_nx_k
+    inc b
+    jp rt_cvm_nx_bit
+rt_cvm_nx_k:
+    ld a,b
+    call rt_cvm_select
+    jp rt_cv_paint
+rt_cvm_back:
+    ld a,(rt_cvm_sel)
+    call rt_cvm_select
+    jp rt_gui_loop
+
+; rt_cvm_select — A = a canvas number: it becomes the current canvas.
+rt_cvm_select:
+    inc a
+    ld hl,rt_cvm_cur
+    cp (hl)
+    ret z
+    ld b,(hl)
+    ld (hl),a
+    push af
+    ld a,b
+    or a
+    call nz,rt_cvm_save         ; the canvas that was current keeps its fonts
+    pop af
+    dec a
+    push af
+    call rt_cvm_entry
+    ld de,cgcanvas
+    ld bc,16
+    ldir
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    ld (rt_cv_edp),de
+    pop af
+    jp rt_cvm_load
+
+; rt_cvm_entry — A = a canvas number: HL = its entry in cgcv_tab. DE corrupt.
+rt_cvm_entry:
+    ld l,a
+    ld h,0
+    add hl,hl
+    ld d,h
+    ld e,l                      ; 2k
+    add hl,hl
+    add hl,hl
+    add hl,hl                   ; 16k
+    add hl,de
+    ld de,cgcv_tab+1
+    add hl,de
+    ret
+
+; rt_cvm_save — A = 1 + the canvas number: its DRAW FONT and TYPE FONT kept.
+; rt_cvm_load — A = a canvas number: its fonts back (font 7 and no TYPE
+; FONT until it chooses them).
+rt_cvm_save:
+    dec a
+    call rt_cvm_slot
+    IF PB_DWFONT
+    ld a,(rt_dw_font)
+    ld (hl),a
+    inc hl
+    ENDIF
+    IF PB_TYPO
+    ex de,hl
+    ld hl,rt_ty_id              ; rt_ty_id, rt_ty_size, rt_ty_style
+    ld bc,4
+    ldir
+    ENDIF
+    ret
+rt_cvm_load:
+    call rt_cvm_slot
+    IF PB_DWFONT
+    ld a,(hl)
+    or a
+    jp nz,rt_cvm_ld_font
+    ld a,7
+rt_cvm_ld_font:
+    ld (rt_dw_font),a
+    inc hl
+    ENDIF
+    IF PB_TYPO
+    ld de,rt_ty_id
+    ld bc,4
+    ldir
+    ENDIF
+    ret
+
+; rt_cvm_slot — A = a canvas number: HL = its RT_CVM_S bytes of rt_cvm_state.
+rt_cvm_slot:
+    ld hl,rt_cvm_state
+    ld de,RT_CVM_S
+    or a
+    ret z
+rt_cvm_slot_k:
+    add hl,de
+    dec a
+    jp nz,rt_cvm_slot_k
+    ret
+
+; rt_cvm_win_ok — A = a canvas's window byte: Z if that window is the one on
+; screen (0: the program's only window). BC, DE, HL kept.
+rt_cvm_win_ok:
+    or a
+    ret z
+    IF PB_WINDOWS
+    push hl
+    ld hl,rt_win_cur
+    cp (hl)
+    pop hl
+    ENDIF
+    ret
+
+; rt_cvm_mask — A = the canvases whose window is on screen (bit k = canvas k).
+rt_cvm_mask:
+    ld a,(cgcv_tab)
+    ld b,a
+    ld c,0
+    ld e,1
+    ld hl,cgcv_tab+1+15
+rt_cvm_m_next:
+    ld a,(hl)
+    call rt_cvm_win_ok
+    jp nz,rt_cvm_m_skip
+    ld a,c
+    or e
+    ld c,a
+rt_cvm_m_skip:
+    push de
+    ld de,RT_CVM_ROW
+    add hl,de
+    pop de
+    sla e
+    dec b
+    jp nz,rt_cvm_m_next
+    ld a,c
+    ret
+
+; rt_cvm_first — A = a mask: B = its lowest canvas, NC; C if A = 0.
+rt_cvm_first:
+    or a
+    scf
+    ret z
+    ld b,0
+rt_cvm_f_bit:
+    rra
+    jp c,rt_cvm_f_done
+    inc b
+    jp rt_cvm_f_bit
+rt_cvm_f_done:
+    or a
+    ret
+
+; rt_cvm_raw — a raw mouse event at screen DE, HL (kept): a press selects
+; the canvas under it (and gives it the keyboard); movement and release the
+; canvas pressed. C: no canvas (the DRAW ON target is current again).
+rt_cvm_raw:
+    push hl
+    push de
+    ld (rt_cvm_px),de
+    ld (rt_cvm_py),hl
+    ld a,(rt_cv_code+1)
+    bit 0,a
+    jp z,rt_cvm_raw_held
+    call rt_cvm_mask
+    ld (rt_cvm_m),a
+    ld a,0FFh
+    ld (rt_cvm_k),a
+rt_cvm_raw_try:
+    ld a,(rt_cvm_k)
+    inc a
+    ld (rt_cvm_k),a
+    ld hl,rt_cvm_m
+    srl (hl)
+    jp c,rt_cvm_raw_test
+    jp nz,rt_cvm_raw_try        ; more canvases on screen to try
+    jp rt_cvm_raw_none
+rt_cvm_raw_test:
+    call rt_cvm_select
+    ld de,(rt_cvm_px)
+    ld hl,(rt_cvm_py)
+    call rt_cv_local
+    call rt_cv_inside
+    jp c,rt_cvm_raw_next
+    ld a,(rt_cvm_k)
+    ld (rt_cvm_downk),a
+    inc a
+    ld (rt_cvm_focus),a
+    or a
+    jp rt_cvm_raw_out
+rt_cvm_raw_next:
+    ld a,(rt_cvm_m)
+    or a
+    jp nz,rt_cvm_raw_try
+rt_cvm_raw_none:
+    ld a,(rt_cvm_sel)
+    call rt_cvm_select
+    scf
+    jp rt_cvm_raw_out
+rt_cvm_raw_held:
+    ld a,(rt_cv_down)
+    or a
+    scf
+    jp z,rt_cvm_raw_out         ; no press on a canvas: not ours
+    ld a,(rt_cvm_downk)
+    call rt_cvm_select
+    or a
+rt_cvm_raw_out:
+    pop de
+    pop hl
+    ret
+
+; rt_cvm_keys — the keyboard's canvas current: FOCUS's or the last pressed
+; if its window is on screen, else the first on screen. C: none.
+rt_cvm_keys:
+    ld a,(rt_cvm_focus)
+    or a
+    jp z,rt_cvm_k_first
+    dec a
+    ld b,a
+    call rt_cvm_entry
+    ld de,15
+    add hl,de
+    ld a,(hl)
+    call rt_cvm_win_ok
+    jp z,rt_cvm_k_this
+rt_cvm_k_first:
+    call rt_cvm_mask
+    call rt_cvm_first
+    ret c
+rt_cvm_k_this:
+    ld a,b
+    call rt_cvm_select
+    or a
+    ret
+
+; rt_cvm_oe_pick — an om_objevent: a click on a canvas's frame selects that
+; canvas (and gives it the keyboard); any other event the keyboard's canvas.
+; C: none.
+rt_cvm_oe_pick:
+    ld a,(rt_cv_on)
+    or a
+    scf
+    ret z
+    ld a,(rt_gui_evtype)
+    cp 1
+    jp nz,rt_cvm_keys
+    call rt_cvm_mask
+    ld c,a
+    ld b,0
+    ld hl,cgcv_tab+1+14
+rt_cvm_oe_next:
+    ld a,(cgcv_tab)
+    cp b
+    scf
+    ret z                       ; no canvas's frame: another object
+    srl c
+    jp nc,rt_cvm_oe_skip
+    ld a,(rt_gui_object)
+    cp (hl)
+    jp z,rt_cvm_oe_hit
+rt_cvm_oe_skip:
+    ld de,RT_CVM_ROW
+    add hl,de
+    inc b
+    jp rt_cvm_oe_next
+rt_cvm_oe_hit:
+    ld a,b
+    ld (rt_cvm_downk),a
+    inc a
+    ld (rt_cvm_focus),a
+    ld a,b
+    call rt_cvm_select
+    or a
+    ret
+    ENDIF
+
 ; rt_cv_span — HL = start, DE = length, BC = limit: C unless 0 <= start,
 ; 0 <= length and start + length <= limit (all INTEGERs, so the sum of two
 ; non-negative values cannot wrap).
@@ -9768,7 +10176,15 @@ rt_cv_span_bad:
 rt_cv_ready:
     ld a,(rt_cv_on)
     or a
+    IF PB_CVMULTI
+    jp z,rt_cv_ready_off
+    ld a,(cgcanvas+15)          ; M15: the target's own window is the one on screen
+    call rt_cvm_win_ok
+    ret z
+rt_cv_ready_off:
+    ELSE
     ret nz
+    ENDIF
     ld hl,rt_cv_off_text
     ld bc,rt_cv_off_text_end-rt_cv_off_text
     jp rt_err_msg
@@ -10384,6 +10800,9 @@ rt_draw_text:
     ld bc,(cgcanvas+6)
     call rt_cv_span
     jp c,rt_cv_outside
+    IF PB_DWFONT
+    ld b,127                    ; M15: all of it; rt_cv_text_fit measures what fits
+    ELSE
     ld hl,(cgcanvas+4)          ; room = (width - x) / RT_CV_CHAR_W
     ld de,(rt_dw_args)
     or a
@@ -10398,8 +10817,13 @@ rt_cv_text_room:
     ld a,b
     cp 127
     jp c,rt_cv_text_room
+    ENDIF
 rt_cv_text_roomed:
+    IF PB_DWFONT
+    ld a,(rt_dw_font)           ; M15: DRAW FONT n (1..12; 7 until one is chosen)
+    ELSE
     ld a,7
+    ENDIF
     ld (rt_ds_buf),a            ; font 7
     xor a
     ld (rt_ds_buf+1),a          ; left-aligned
@@ -10443,6 +10867,9 @@ rt_cv_text_put:
 rt_cv_text_end:
     xor a
     ld (de),a
+    IF PB_DWFONT
+    call rt_cv_text_fit         ; M15: cut where it stops fitting, by measuring
+    ENDIF
     ld a,111
     call 003Bh                  ; os_mouse_off
     call 0CBh
@@ -10595,6 +11022,163 @@ rt_cv_shade_text_end:
 rt_cv_ref_text:
     db "Runtime error: Rosanne refused a drawing at line "
 rt_cv_ref_text_end:
+
+    IF PB_DWFONT
+; ----------------------------------------------------------------------------
+; M15 DRAW FONT n (LANGUAGE-SPEC 5.6): the dialog font of later DRAW TEXT and
+; TEXTWIDTH, 1..12 (owner XAnne, M15a T1/T2: all twelve draw). In such a
+; program DRAW TEXT measures what fits before the right edge with
+; os_dialog_string_width (82: HL = the width; its carry is not used, M5d
+; WIDTHDG) instead of the RC1 rule of RT_CV_CHAR_W pixels a character.
+; ----------------------------------------------------------------------------
+rt_draw_font:
+    ld hl,(rt_dw_args)
+    dec hl
+    ld de,12
+    or a
+    sbc hl,de
+    jp nc,rt_dw_font_bad        ; 0 or over 12 (or negative)
+    ld a,(rt_dw_args)
+    ld (rt_dw_font),a
+    ret
+rt_dw_font_bad:
+    ld hl,rt_dw_font_text
+    ld bc,rt_dw_font_end-rt_dw_font_text
+    jp rt_err_msg
+rt_dw_font_text:
+    db "Runtime error: a font is 1 to 12 at line "
+rt_dw_font_end:
+
+; rt_cv_tw — HL = the width of the text in rt_ds_buf (its font) in pixels
+rt_cv_tw:
+    call 0CBh                   ; bios_getmem1: the block holding rt_ds_buf
+    ld c,a
+    ld hl,rt_ds_buf
+    ld a,82
+    call 003Bh                  ; os_dialog_string_width
+    ret
+
+; rt_cv_text_fit — rt_ds_buf holds the whole text, DE at its NUL. With ALIGN
+; (rt_dw_align 1 centre, 2 right) the left edge moves left by half or all of
+; the width (not past the canvas's left edge). Then the text is cut to the
+; longest start that fits before the right edge (a binary search on the
+; length, the NUL moved).
+rt_cv_text_fit:
+    ld hl,rt_ds_buf+8
+    ex de,hl
+    or a
+    sbc hl,de
+    ld a,l
+    ld (rt_dw_len),a            ; the length, 0..127
+    IF PB_DWALIGN
+    ld a,(rt_dw_align)
+    or a
+    jp z,rt_cv_fit_x
+    ld b,a
+    xor a
+    ld (rt_dw_align),a          ; one DRAW TEXT only
+    push bc
+    call rt_cv_tw
+    pop bc
+    dec b
+    jp nz,rt_cv_fit_all         ; 2: right, the whole width
+    srl h                       ; 1: centre, half of it
+    rr l
+rt_cv_fit_all:
+    ex de,hl
+    ld hl,(rt_dw_args)
+    or a
+    sbc hl,de
+    jp nc,rt_cv_fit_left
+    ld hl,0                     ; not past the left edge
+rt_cv_fit_left:
+    ld (rt_dw_args),hl
+    ld de,(cgcanvas)
+    add hl,de
+    ld (rt_ds_buf+4),hl
+    ENDIF
+rt_cv_fit_x:
+    ld hl,(cgcanvas+4)          ; room = width - x
+    ld de,(rt_dw_args)
+    or a
+    sbc hl,de
+    ld (rt_dw_room),hl
+    ld a,(rt_ds_buf)
+    cp 7
+    jp z,rt_cv_fit_room         ; font 7: its widths match the drawn text (M11, RENDPRB)
+    ld hl,(rt_ds_buf+8)         ; M15c F3 (XAnne): other fonts' ink may pass the
+    push hl                     ; measured end, so half a W + 1 px is kept free
+    ld hl,'W'                   ; "W", 0 measured in place of the text
+    ld (rt_ds_buf+8),hl
+    call rt_cv_tw
+    pop de
+    ld (rt_ds_buf+8),de
+    srl h
+    rr l
+    inc hl
+    ex de,hl
+    ld hl,(rt_dw_room)
+    or a
+    sbc hl,de
+    jp nc,rt_cv_fit_keep
+    ld hl,0
+rt_cv_fit_keep:
+    ld (rt_dw_room),hl
+rt_cv_fit_room:
+    call rt_cv_tw
+    call rt_cv_fits
+    ret nc                      ; all of it fits
+    xor a
+    ld (rt_dw_lo),a             ; a start of lo characters fits, of hi does not
+    ld a,(rt_dw_len)
+    ld (rt_dw_hi),a
+rt_cv_fit_step:
+    ld a,(rt_dw_lo)
+    ld b,a
+    ld a,(rt_dw_hi)
+    sub b
+    cp 2
+    jp c,rt_cv_fit_done
+    srl a
+    add a,b                     ; mid
+    ld (rt_dw_mid),a
+    ld e,a
+    ld d,0
+    ld hl,rt_ds_buf+8
+    add hl,de
+    ld a,(hl)
+    ld (rt_dw_save),a
+    ld (hl),0
+    push hl
+    call rt_cv_tw
+    call rt_cv_fits
+    pop hl
+    ld a,(rt_dw_save)
+    ld (hl),a
+    ld a,(rt_dw_mid)
+    jp c,rt_cv_fit_hi
+    ld (rt_dw_lo),a
+    jp rt_cv_fit_step
+rt_cv_fit_hi:
+    ld (rt_dw_hi),a
+    jp rt_cv_fit_step
+rt_cv_fit_done:
+    ld a,(rt_dw_lo)
+    ld e,a
+    ld d,0
+    ld hl,rt_ds_buf+8
+    add hl,de
+    ld (hl),0
+    ret
+
+; rt_cv_fits — NC if HL (a width) <= rt_dw_room, else C
+rt_cv_fits:
+    ex de,hl
+    ld hl,(rt_dw_room)
+    or a
+    sbc hl,de
+    ret
+    ENDIF
     ENDIF
 
     IF PB_BITMAP
@@ -11791,6 +12375,10 @@ rt_pg_size_ok:
     call 003Bh                  ; os_typo_def
     or a
     jp nz,rt_fio_set
+    IF PB_TYPG
+    ld a,2
+    ld (rt_ty_slot),a           ; M15: slot 0 holds the PAGE font
+    ENDIF
     ld a,90
     call 003Bh                  ; os_typo_info: HL -> pitch, ascender, descender
     or a
@@ -11834,6 +12422,9 @@ rt_pg_char_ok:
 rt_pg_text:
     push hl
     call rt_pg_need
+    IF PB_TYPG
+    call rt_ty_pgslot           ; M15: the PAGE font back in slot 0 after DRAW TYPE
+    ENDIF
     ld hl,(rt_pg_args+2)
     ld de,RT_PG_H
     call rt_pg_range
@@ -11906,6 +12497,9 @@ rt_pg_t_done:
 rt_pg_width:
     push hl
     call rt_pg_need
+    IF PB_TYPG
+    call rt_ty_pgslot           ; M15: the PAGE font back in slot 0 after DRAW TYPE
+    ENDIF
     pop hl
     ld de,0
     ld (rt_pg_nx),de
@@ -12233,6 +12827,478 @@ rt_pg_close:
     ld a,105
     call 003Bh                  ; os_meta_close
     ret
+    ENDIF
+
+    IF PB_TYPO
+; ============================================================================
+; M15 W3 screen typography (LANGUAGE-SPEC 5.6): TYPE FONT, DRAW TYPE,
+; TYPEWIDTH, TYPEHEIGHT. Rosanne's scalable typo fonts drawn on the canvas
+; with os_typo_charscreen (93: "in: C = Character number, B = accent, DE = x
+; in PIXELS, HL = y in PIXELS, IX(lo) = style (bit0 Bold, bit1 Italic),
+; IX(hi) = mode (0 Opaque .. 3 XOR); out: A = 0 OK / 4 no font in slot / 5
+; out of range / 6, 9 outside the clipping window", ROSAN283), after the
+; init / list / select / define / info sequence the accepted PAGE printing
+; uses (rt_pg_new, rt_pg_font).
+; XAnne (owner, M15a T4a-T4e): slot 0 at 10 points, plain, bold and italic,
+; mode 0, draws inside a canvas without disturbing the screen; one pixel is
+; about 25/1800" (a screenshot reading). M15c (owner, XAnne): sizes up to 72
+; draw without disturbing the screen; Times, bold and italic at 18.
+; The guards: every character's advance is measured (os_typo_charwidth,
+; 91) and drawing stops before the first character that would pass the
+; canvas's right edge (italic: a quarter of the ascender earlier); and the
+; line (TYPEHEIGHT) must lie in the canvas. M15c T2 (owner, XAnne): Rosanne's
+; y is the baseline (text drawn at y = 40 stood above a rule at 40), so the
+; runtime passes the line's top + the ascender. The screen clipping window
+; is not used (os_scr_window is not called).
+; Slot 0 is shared with PAGE: rt_ty_slot says which font it holds (1 the
+; TYPE FONT, 2 the PAGE font) and each side defines it again only when the
+; other has changed it.
+; ----------------------------------------------------------------------------
+rt_ty_sizes:
+    db 6,8,10,11,12,14,18,24,36,72
+
+; rt_type_font — TYPE FONT family, size [, BOLD] [, ITALIC]: rt_dw_args =
+; size, +2 = RTF family (1 Times, 2 Swiss), +3 = style (bit 0 bold, 1 italic).
+rt_type_font:
+    ld a,(rt_dw_args+1)
+    or a
+    jp nz,rt_ty_bad_size
+    ld a,(rt_dw_args)
+    ld hl,rt_ty_sizes
+    ld b,10
+rt_ty_size_find:
+    cp (hl)
+    jp z,rt_ty_size_ok
+    inc hl
+    djnz rt_ty_size_find
+rt_ty_bad_size:
+    ld hl,rt_ty_size_text
+    ld bc,rt_ty_size_end-rt_ty_size_text
+    jp rt_err_msg
+rt_ty_size_text:
+    db "Runtime error: a type size is 6, 8, 10, 11, 12, 14, 18, 24, 36 or 72 at line "
+rt_ty_size_end:
+rt_ty_size_ok:
+    ld (rt_ty_size),a
+    ld a,(rt_dw_args+3)
+    ld (rt_ty_style),a
+    call rt_ty_ready
+    ld a,(rt_dw_args+2)
+    cp 1
+    ld hl,(rt_ty_times)
+    jp z,rt_ty_fam_ok
+    ld hl,(rt_ty_swiss)
+rt_ty_fam_ok:
+    ld (rt_ty_id),hl
+    jp rt_ty_want               ; defined now, so that an error is on this line
+
+; rt_ty_ready — os_typo_init once (shared with PAGE) and the two families'
+; fonts from the list: the first of RTF family 1 (Times) and of 2 (Swiss),
+; each the list's first font if the family is missing.
+rt_ty_ready:
+    ld a,(rt_ty_init)
+    or a
+    ret nz
+    IF PB_TYPG
+    ld a,(rt_pg_typo)
+    or a
+    jp nz,rt_ty_list
+    ENDIF
+    ld a,83
+    call 003Bh                  ; os_typo_init
+    jp c,rt_ty_none
+    IF PB_TYPG
+    call rt_pg_family           ; PAGE NEW would otherwise look for it after this init
+    ld a,1
+    ld (rt_pg_typo),a
+    ENDIF
+rt_ty_list:
+    ld a,84
+    call 003Bh                  ; os_typo_getlist: B entries of 37 bytes at CHL
+    ld a,b
+    or a
+    jp z,rt_ty_none
+    ld (rt_ty_k),a
+    xor a
+    ld (rt_ty_seen),a           ; bit 0 the first, 1 Times, 2 Swiss
+rt_ty_entry:
+    ld b,1
+    ld a,42
+    call 003Bh                  ; os_get_byte_24bit, wound on: ID low
+    ld a,e
+    ld (rt_ty_t),a
+    ld b,1
+    ld a,42
+    call 003Bh                  ; ID high
+    ld a,e
+    ld (rt_ty_t+1),a
+    ld b,1
+    ld a,42
+    call 003Bh                  ; styles
+    ld b,1
+    ld a,42
+    call 003Bh                  ; RTF family
+    push hl
+    ld hl,(rt_ty_t)
+    ld a,(rt_ty_seen)
+    bit 0,a
+    jp nz,rt_ty_e_fam
+    ld (rt_ty_times),hl         ; the first font: both fallbacks
+    ld (rt_ty_swiss),hl
+    or 1
+rt_ty_e_fam:
+    ld d,a
+    ld a,e
+    cp 1
+    jp nz,rt_ty_e_swiss
+    bit 1,d
+    jp nz,rt_ty_e_done
+    ld (rt_ty_times),hl
+    set 1,d
+    jp rt_ty_e_done
+rt_ty_e_swiss:
+    cp 2
+    jp nz,rt_ty_e_done
+    bit 2,d
+    jp nz,rt_ty_e_done
+    ld (rt_ty_swiss),hl
+    set 2,d
+rt_ty_e_done:
+    ld a,d
+    ld (rt_ty_seen),a
+    pop hl
+    ld a,33                     ; the name: 33 bytes
+rt_ty_e_name:
+    push af
+    ld b,1
+    ld a,42
+    call 003Bh
+    pop af
+    dec a
+    jp nz,rt_ty_e_name
+    ld a,(rt_ty_k)
+    dec a
+    ld (rt_ty_k),a
+    jp nz,rt_ty_entry
+    ld a,1
+    ld (rt_ty_init),a
+    ret
+rt_ty_none:
+    ld hl,rt_ty_none_text
+    ld bc,rt_ty_none_end-rt_ty_none_text
+    jp rt_err_msg
+rt_ty_none_text:
+    db "Runtime error: Rosanne has no type fonts here at line "
+rt_ty_none_end:
+
+; rt_ty_want — slot 0 holds the TYPE FONT (Times 10 if none was chosen),
+; and rt_ty_ascpx / rt_ty_hgt are its ascender and line height in pixels.
+rt_ty_want:
+    ld a,(rt_ty_size)
+    or a
+    jp nz,rt_ty_w_chosen
+    call rt_ty_ready
+    ld a,10
+    ld (rt_ty_size),a
+    ld hl,(rt_ty_times)
+    ld (rt_ty_id),hl
+rt_ty_w_chosen:
+    ld a,(rt_ty_slot)
+    cp 1
+    jp nz,rt_ty_define
+    ld a,(rt_ty_dsize)
+    ld b,a
+    ld a,(rt_ty_size)
+    cp b
+    jp nz,rt_ty_define
+    ld hl,(rt_ty_did)
+    ld de,(rt_ty_id)
+    or a
+    sbc hl,de
+    ret z
+rt_ty_define:
+    xor a
+    ld (rt_ty_slot),a           ; nothing known until it is defined
+    ld e,0
+    ld a,85
+    call 003Bh                  ; os_typo_select slot 0
+    ld a,88
+    call 003Bh                  ; os_typo_clr (4: it was empty)
+    ld hl,(rt_ty_id)
+    ld d,0FFh                   ; every style
+    ld a,(rt_ty_size)
+    ld b,a
+    ld a,87
+    call 003Bh                  ; os_typo_def
+    or a
+    jp nz,rt_ty_refused
+    ld a,90
+    call 003Bh                  ; os_typo_info: HL -> pitch, ascender, descender
+    or a
+    jp nz,rt_ty_refused
+    inc hl
+    inc hl
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    inc hl
+    ld c,(hl)
+    inc hl
+    ld b,(hl)
+    push bc                     ; the descender
+    ex de,hl
+    push hl
+    call rt_ty_px_up
+    ld (rt_ty_ascpx),hl
+    pop hl
+    pop de
+    add hl,de
+    call rt_ty_px_up
+    ld (rt_ty_hgt),hl
+    ld hl,(rt_ty_id)
+    ld (rt_ty_did),hl
+    ld a,(rt_ty_size)
+    ld (rt_ty_dsize),a
+    ld a,1
+    ld (rt_ty_slot),a
+    ret
+rt_ty_refused:
+    ld hl,rt_ty_ref_text
+    ld bc,rt_ty_ref_end-rt_ty_ref_text
+    jp rt_err_msg
+rt_ty_ref_text:
+    db "Runtime error: Rosanne refused the type font at line "
+rt_ty_ref_end:
+
+; rt_ty_px_up — HL = HL / 25 rounded up (1/1800" to pixels). DE corrupt.
+rt_ty_px_up:
+    ld de,24
+    add hl,de
+    ld de,0
+rt_ty_px_loop:
+    ld a,l
+    sub 25
+    ld l,a
+    ld a,h
+    sbc a,0
+    ld h,a
+    jp c,rt_ty_px_done
+    inc de
+    jp rt_ty_px_loop
+rt_ty_px_done:
+    ex de,hl
+    ret
+
+; rt_ty_adv — the next character of the text at (rt_ty_p) measured: Z at its
+; end; else NZ, rt_ty_ch = the character (outside 32..255 as '?'), rt_ty_npx
+; / rt_ty_nrem = the pixel offset and remainder after it (rt_ty_px and
+; rt_ty_rem: before it; position = (1/1800" so far + 12) / 25). A character
+; the font refuses advances by nothing.
+rt_ty_adv:
+    ld hl,(rt_ty_p)
+    ld a,(hl)
+    or a
+    ret z
+    inc hl
+    ld (rt_ty_p),hl
+    cp 32
+    jp nc,rt_ty_adv_ok
+    ld a,'?'
+rt_ty_adv_ok:
+    ld (rt_ty_ch),a
+    ld c,a
+    ld b,0
+    ld a,(rt_ty_style)
+    and 1                       ; os_typo_charwidth obeys bold (bit 0) only
+    ld d,a
+    ld a,91
+    call 003Bh                  ; os_typo_charwidth: DE = width (1/1800")
+    or a
+    jp z,rt_ty_adv_w
+    ld de,0
+rt_ty_adv_w:
+    ld a,(rt_ty_rem)
+    ld l,a
+    ld h,0
+    add hl,de
+    ld de,(rt_ty_px)
+rt_ty_adv_div:
+    ld a,l
+    sub 25
+    ld c,a
+    ld a,h
+    sbc a,0
+    jp c,rt_ty_adv_done
+    ld h,a
+    ld l,c
+    inc de
+    jp rt_ty_adv_div
+rt_ty_adv_done:
+    ld a,l
+    ld (rt_ty_nrem),a
+    ld (rt_ty_npx),de
+    or 1                        ; NZ
+    ret
+
+; rt_ty_start — HL = the text: rt_ty_p, px 0, remainder 12 (rounding).
+rt_ty_start:
+    ld (rt_ty_p),hl
+    ld hl,0
+    ld (rt_ty_px),hl
+    ld a,12
+    ld (rt_ty_rem),a
+    ret
+
+; rt_ty_step — rt_ty_px / rt_ty_rem moved on past the character measured.
+rt_ty_step:
+    ld hl,(rt_ty_npx)
+    ld (rt_ty_px),hl
+    ld a,(rt_ty_nrem)
+    ld (rt_ty_rem),a
+    ret
+
+; rt_type_width — TYPEWIDTH(text$): HL = the text; HL = its width in
+; pixels in the TYPE FONT, as DRAW TYPE advances.
+rt_type_width:
+    push hl
+    call rt_ty_want
+    pop hl
+    call rt_ty_start
+rt_ty_tw_next:
+    call rt_ty_adv
+    jp z,rt_ty_tw_done
+    call rt_ty_step
+    jp rt_ty_tw_next
+rt_ty_tw_done:
+    ld hl,(rt_ty_px)
+    ret
+
+; rt_type_height — TYPEHEIGHT: HL = the TYPE FONT's line height in pixels
+; (ascender + descender, rounded up).
+rt_type_height:
+    call rt_ty_want
+    ld hl,(rt_ty_hgt)
+    ret
+
+; rt_draw_type — DRAW TYPE x, y, text$: HL = the text, rt_dw_args = x, y
+; (the line's top left in the canvas). Drawn in the TYPE FONT, its style,
+; mode 0 (opaque) or 3 under DRAW INK XOR, as far as it fits.
+rt_draw_type:
+    push hl
+    call rt_cv_ready
+    call rt_ty_want
+    ld hl,(rt_dw_args)
+    ld de,1
+    ld bc,(cgcanvas+4)
+    call rt_cv_span
+    jp c,rt_cv_outside
+    ld hl,(rt_dw_args+2)
+    ld de,(rt_ty_hgt)
+    ld bc,(cgcanvas+6)
+    call rt_cv_span
+    jp c,rt_cv_outside
+    ld hl,(rt_dw_args+2)
+    ld de,(cgcanvas+2)
+    add hl,de
+    ld de,(rt_ty_ascpx)         ; M15c T2 (XAnne): Rosanne's y is the baseline,
+    add hl,de                   ; so the line's top + the ascender
+    ld (rt_ty_sy),hl
+    ld hl,(rt_dw_args)
+    ld de,(cgcanvas)
+    add hl,de
+    ld (rt_ty_x0),hl
+    ld hl,(cgcanvas+4)          ; the right edge: offset <= width - x
+    ld de,(rt_dw_args)
+    or a
+    sbc hl,de
+    ld a,(rt_ty_style)
+    and 2
+    jp z,rt_ty_upright
+    ld de,(rt_ty_ascpx)         ; italic leans right: a quarter of the ascender
+    srl d                       ; kept free at the edge
+    rr e
+    srl d
+    rr e
+    or a
+    sbc hl,de
+    jp nc,rt_ty_upright
+    ld hl,0
+rt_ty_upright:
+    ld (rt_ty_room),hl
+    ld a,(rt_dw_ink)
+    cp 2
+    ld a,0
+    jp nz,rt_ty_mode
+    ld a,3                      ; XOR
+rt_ty_mode:
+    ld (rt_ty_mode_b),a
+    pop hl
+    call rt_ty_start
+    ld a,111
+    call 003Bh                  ; os_mouse_off
+rt_ty_d_next:
+    call rt_ty_adv
+    jp z,rt_ty_d_done
+    ld hl,(rt_ty_room)
+    ld de,(rt_ty_npx)
+    or a
+    sbc hl,de
+    jp c,rt_ty_d_done           ; it would pass the right edge: the rest is cut
+    ld a,(rt_ty_ch)
+    ld c,a
+    ld b,0
+    ld a,(rt_ty_mode_b)
+    ld h,a
+    ld a,(rt_ty_style)
+    ld l,a
+    push hl
+    pop ix                      ; IX = mode * 256 + style (an input only: no IX is live, A5)
+    ld hl,(rt_ty_x0)
+    ld de,(rt_ty_px)
+    add hl,de
+    ex de,hl                    ; DE = x
+    ld hl,(rt_ty_sy)            ; HL = y
+    ld a,93
+    call 003Bh                  ; os_typo_charscreen
+    or a
+    jp nz,rt_ty_d_refused
+    call rt_ty_step
+    jp rt_ty_d_next
+rt_ty_d_done:
+    ld a,112
+    call 003Bh                  ; os_mouse_on
+    ret
+rt_ty_d_refused:
+    ld a,112
+    call 003Bh                  ; os_mouse_on
+    jp rt_cv_refused
+
+; rt_ty_pgslot (with PAGE, PB_TYPG) — slot 0 holds the PAGE font again, if
+; DRAW TYPE or TYPEWIDTH has defined the TYPE FONT there since.
+    IF PB_TYPG
+rt_ty_pgslot:
+    ld a,(rt_ty_slot)
+    cp 1
+    ret nz                      ; 0 (none of ours) or 2: PAGE's own, or as PAGE left it
+    xor a
+    ld (rt_ty_slot),a
+    ld e,0
+    ld a,85
+    call 003Bh                  ; os_typo_select slot 0
+    ld a,88
+    call 003Bh                  ; os_typo_clr
+    ld hl,(rt_pg_id)
+    ld d,0FFh
+    ld a,(rt_pg_size)
+    ld b,a
+    ld a,87
+    call 003Bh                  ; os_typo_def (a refusal: PAGE's own call reports it)
+    or a
+    ret nz
+    ld a,2
+    ld (rt_ty_slot),a
+    ret
+    ENDIF
     ENDIF
 
     IF PB_CODEBANKS
@@ -14380,6 +15446,60 @@ rt_pg_bh:
 rt_pg_args:
     defs 10
     ENDIF
+    IF PB_TYPO
+; M15 W3 screen typography: set up; the chosen font (ID, size 0 = none yet,
+; style); the font slot 0 holds (1 ours, 2 PAGE's, 0 unknown) and its ID and
+; size; its ascender and line height in pixels; the families' fonts; the
+; list's scan; a line being drawn or measured.
+rt_ty_init:
+    defs 1
+rt_ty_id:
+    defs 2
+rt_ty_size:
+    defs 1
+rt_ty_style:
+    defs 1
+rt_ty_slot:
+    defs 1
+rt_ty_did:
+    defs 2
+rt_ty_dsize:
+    defs 1
+rt_ty_ascpx:
+    defs 2
+rt_ty_hgt:
+    defs 2
+rt_ty_times:
+    defs 2
+rt_ty_swiss:
+    defs 2
+rt_ty_k:
+    defs 1
+rt_ty_seen:
+    defs 1
+rt_ty_t:
+    defs 2
+rt_ty_p:
+    defs 2
+rt_ty_ch:
+    defs 1
+rt_ty_px:
+    defs 2
+rt_ty_rem:
+    defs 1
+rt_ty_npx:
+    defs 2
+rt_ty_nrem:
+    defs 1
+rt_ty_x0:
+    defs 2
+rt_ty_sy:
+    defs 2
+rt_ty_room:
+    defs 2
+rt_ty_mode_b:
+    defs 1
+    ENDIF
     IF PB_CODEBANKS
 ; M9 code banks (data area, after rt_alert_buf, like every other runtime cell).
 ; rt_code_n: blocks held (0 = none to release); rt_code_q2: the block at
@@ -14432,6 +15552,40 @@ rt_cv_dirty:
     defs 1
 rt_cv_painting:
     defs 1
+    IF PB_CVMULTI
+; M15 several canvases: the current canvas (a copy of its cgcv_tab entry)
+; and its window's text fields; 1 + the current canvas's number (0: none
+; yet); the DRAW ON target; 1 + the keyboard's canvas (0: the first on
+; screen); the canvas pressed; PAINTs due (bit k); a press's search; each
+; canvas's fonts. (The current canvas's copy, cgcanvas, is the program's: defs 16.)
+rt_cv_edp:
+    defs 2
+rt_cvm_cur:
+    defs 1
+rt_cvm_sel:
+    defs 1
+rt_cvm_focus:
+    defs 1
+rt_cvm_downk:
+    defs 1
+rt_cvm_pend:
+    defs 1
+rt_cvm_m:
+    defs 1
+rt_cvm_k:
+    defs 1
+rt_cvm_px:
+    defs 2
+rt_cvm_py:
+    defs 2
+    IF PB_DWFONT+PB_TYPO
+; 8 canvases of RT_CVM_S (at most 5) bytes
+rt_cvm_state:
+    defs 40
+    ELSE
+rt_cvm_state equ rt_cvm_py
+    ENDIF
+    ENDIF
 rt_cv_wasneg:
     defs 1
 rt_cv_bios_op:
@@ -14518,6 +15672,26 @@ rt_dg_buf:
     defs 16
 rt_ds_buf:
     defs 136
+    IF PB_DWFONT
+rt_dw_font:
+    db 7                        ; M15: DRAW FONT's font (dialog font 7 by default)
+rt_dw_len:
+    defs 1
+rt_dw_lo:
+    defs 1
+rt_dw_hi:
+    defs 1
+rt_dw_mid:
+    defs 1
+rt_dw_save:
+    defs 1
+rt_dw_room:
+    defs 2
+    IF PB_DWALIGN
+rt_dw_align:
+    db 0                        ; M15: ALIGN of the next DRAW TEXT (1 centre, 2 right)
+    ENDIF
+    ENDIF
     IF PB_TEXTW
 ; TEXTWIDTH's block (M11 corrective). Defined here, after rt_ds_buf: an equ
 ; to a label defined later takes that label's first-pass value (0) in Pasmo

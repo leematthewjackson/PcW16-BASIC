@@ -37,7 +37,7 @@ class ArtifactTests(unittest.TestCase):
                 # words it was accepted with (KI-89)
                 build(ROOT / src, t / f"{name}.asm", t / f"{name}.prg", runtime_sections="all",
                       legacy_menu_hotkeys=name == "paint",  # M14: as accepted
-                      legacy_file_safety=True, legacy_real_rounding=True)
+                      legacy_file_safety=True, legacy_real_rounding=True, legacy_tasks_stop=True)
                 image = (t / f"{name}.prg").read_bytes()
                 self.assertEqual(image, (ART / f"{name}.prg").read_bytes())
                 self.assertIn(hashlib.sha256(image).hexdigest(), manifest)
@@ -49,7 +49,7 @@ class ArtifactTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             t = Path(tmp)
             build(ROOT / "developer-tests" / "bmpprb.pbas", t / "n.asm", t / "n.prg",
-                  legacy_file_safety=True, legacy_real_rounding=True)
+                  legacy_file_safety=True, legacy_real_rounding=True, legacy_tasks_stop=True)
             image = (t / "n.prg").read_bytes()
             self.assertEqual(image, (ART / "bmpprn.prg").read_bytes())
             self.assertIn(hashlib.sha256(image).hexdigest(), manifest)

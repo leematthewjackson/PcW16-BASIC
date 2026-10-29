@@ -94,6 +94,8 @@ class Analysis:
     windows: list = None  # list[WindowDecl] (M6)
     menus: list = None  # list[MenuDecl] (M6)
     timer: TimerDecl | None = None  # M6
+    on_stop: str | None = None  # M15: ON STOP's FUNCTION
+    on_stop_line: int = 0
 
 
 NUMERIC = ('INTEGER', 'REAL')  # M7
@@ -122,7 +124,8 @@ _BUILTINS = {'LEN', 'STR$', 'LEFT$', 'RIGHT$', 'MID$', 'VAL', 'ASC', 'CHR$', 'IN
              'BITMAPW', 'BITMAPH', 'POINT',
              'PAGEWIDTH',  # M12 printing
              'KEYDOWN',  # M13 held keys
-             'CLOCKTICKS'}  # M13 corrective: the clock in 1/16 s
+             'CLOCKTICKS',  # M13 corrective: the clock in 1/16 s
+             'TYPEWIDTH', 'TYPEHEIGHT'}  # M15 screen typography
 DB_FUNCTIONS = ('DBFIND', 'DBNEXTID', 'DBRECOVERED')  # M10 (LANGUAGE-SPEC §5.9)
 # M9 Stage C: TEXT functions -> (argument types after the buffer, result type)
 TEXT_FUNCTIONS = {'TEXTLINES': ((), 'INTEGER'), 'TEXTLEN': (('INTEGER',), 'INTEGER'),
@@ -137,6 +140,7 @@ CANVAS_EVENT_NAMES = ('MOUSEX', 'MOUSEY', 'MOUSEEVENT', 'KEYCODE', 'KEYSHIFT')  
 CANVAS_MIN = 16  # M9: smallest CANVAS side (pixels)
 CANVAS_MAX_W = 568  # M9: widest drawing area that fits a LARGE window's box (pbas/layout.py)
 CANVAS_MAX_H = 300
+CANVAS_MAX_N = 8  # M15: canvases in one program
 PAGE_SIZES = (6, 8, 10, 11, 12, 14, 18, 24, 36, 72)  # M12: os_typo_def / os_meta_font point sizes
 _TRIMS = ('TRIM$', 'LTRIM$', 'RTRIM$')
 
@@ -292,7 +296,7 @@ def analyze(nodes, *, string_capacity: int = DEFAULT_STRING_CAPACITY) -> Analysi
         isinstance(node, (ast.TextOp, ast.BitmapOp)) and node.op in ('LOAD', 'SAVE') for node in nodes  # M9; M12
     ) or any(isinstance(node, ast.PageOp) for node in nodes)  # M12: PAGE sets IOERR
     has_canvas = any(isinstance(node, ast.Canvas) for node in nodes)  # M9
-    canvases: list = []  # M9: at most one CANVAS per program
+    canvases: list = []  # M9: one CANVAS per program; M15: up to CANVAS_MAX_N, named
 
     # ------------------------------------------------------------- expressions
     def expression(expr) -> str:
@@ -547,6 +551,15 @@ def analyze(nodes, *, string_capacity: int = DEFAULT_STRING_CAPACITY) -> Analysi
         if name in ('BITMAPW', 'BITMAPH'):  # M12: a bitmap's current width / height
             arity(1)
             bitmap_var(args[0], name)
+            return 'INTEGER'
+        if name in ('TYPEWIDTH', 'TYPEHEIGHT'):  # M15: screen typography, in pixels
+            if not has_canvas:
+                raise SourceError(expr.line, expr.column, f'{name} measures for DRAW TYPE: the program has no CANVAS')
+            arity(1 if name == 'TYPEWIDTH' else 0)
+            if args and expression(args[0]) != 'STRING':
+                raise SourceError(args[0].line, args[0].column, 'TYPEWIDTH expects a STRING')
+            if args:
+                require_scratch_fit(args[0], name)
             return 'INTEGER'
         if name == 'PAGEWIDTH':  # M12: printed width in points (os_typo_charwidth)
             arity(1)
@@ -862,6 +875,7 @@ def analyze(nodes, *, string_capacity: int = DEFAULT_STRING_CAPACITY) -> Analysi
     menus: list[MenuDecl] = []
     menu_keys: dict[str, int] = {}
     timer: TimerDecl | None = None
+    on_stop = None  # M15: (FUNCTION, line) of ON STOP
 
     def current():
         """The widget list and caps of the WINDOW controls attach to."""
@@ -1107,9 +1121,19 @@ def analyze(nodes, *, string_capacity: int = DEFAULT_STRING_CAPACITY) -> Analysi
             pending_lists.append(widget)
         elif isinstance(node, ast.Canvas):  # M9
             require_window(node, 'CANVAS')
-            if canvases:
-                raise SourceError(node.line, node.column,
-                                  f'a program may have one CANVAS (another is at line {canvases[0].line})')
+            unnamed = next((c for c in canvases if c.canvas_name is None), None)
+            if canvases and (node.name is None or unnamed is not None):  # M15: several, each named
+                at = node if node.name is None else unnamed
+                raise SourceError(at.line, at.column,
+                                  'with more than one CANVAS each needs a name: CANVAS Name, width, height '
+                                  f'(the other is at line {canvases[0].line if at is node else node.line})')
+            if len(canvases) == CANVAS_MAX_N:
+                raise SourceError(node.line, node.column, f'a program may have at most {CANVAS_MAX_N} canvases')
+            if node.name is not None:
+                twin = next((c for c in canvases if c.canvas_name == node.name), None)
+                if twin is not None:
+                    raise SourceError(node.line, node.column,
+                                      f'CANVAS {node.name} is already declared at line {twin.line}')
             if not CANVAS_MIN <= node.width <= CANVAS_MAX_W or not CANVAS_MIN <= node.height <= CANVAS_MAX_H:
                 raise SourceError(node.line, node.column,
                                   f'CANVAS width must be {CANVAS_MIN} to {CANVAS_MAX_W} and height '
@@ -1117,7 +1141,7 @@ def analyze(nodes, *, string_capacity: int = DEFAULT_STRING_CAPACITY) -> Analysi
             target, _ = current()
             widget = Widget('CANVAS', None, None, None, node.line, node.column,
                             width=node.width, height=node.height, paint=node.paint,
-                            mouse=node.mouse, keys_handler=node.keys)
+                            mouse=node.mouse, keys_handler=node.keys, canvas_name=node.name)
             canvases.append(widget)
             target.append(widget)
             widgets.append(widget)
@@ -1213,6 +1237,12 @@ def analyze(nodes, *, string_capacity: int = DEFAULT_STRING_CAPACITY) -> Analysi
         elif isinstance(node, ast.EndMenu):
             if not menus[-1].items:
                 raise SourceError(node.line, node.column, 'a MENU needs at least one ITEM')
+        elif isinstance(node, ast.OnStop):  # M15
+            require_window(node, 'ON STOP')
+            if on_stop is not None:
+                raise SourceError(node.line, node.column,
+                                  f'only one ON STOP is allowed (the first is at line {on_stop[1]})')
+            on_stop = (node.handler, node.line)
         elif isinstance(node, ast.Timer):  # M6
             require_window(node, 'TIMER')
             if timer is not None:
@@ -1292,7 +1322,8 @@ def analyze(nodes, *, string_capacity: int = DEFAULT_STRING_CAPACITY) -> Analysi
         """Name(index) of a declared array is an element, not a call."""
         if isinstance(expr, ast.Var) and expr.name in ('IOERR', 'DBRECOVERED') and expr.name not in variables:
             return ast.Call(expr.line, expr.column, expr.name, [])  # M7: a status function; M10
-        if isinstance(expr, ast.Var) and expr.name in ('SECONDS', 'CLOCKTICKS') and expr.name not in variables:
+        if (isinstance(expr, ast.Var) and expr.name in ('SECONDS', 'CLOCKTICKS', 'TYPEHEIGHT')
+                and expr.name not in variables):
             return ast.Call(expr.line, expr.column, expr.name, [])  # M11: the clock; M13 corrective
         if (isinstance(expr, ast.Var) and expr.name in CANVAS_EVENT_NAMES and has_canvas
                 and expr.name not in variables):
@@ -1594,6 +1625,7 @@ def analyze(nodes, *, string_capacity: int = DEFAULT_STRING_CAPACITY) -> Analysi
                 ast.Item,
                 ast.EndMenu,
                 ast.Timer,
+                ast.OnStop,
                 ast.Sub,
                 ast.EndSub,
                 ast.Else,
@@ -1715,6 +1747,11 @@ def analyze(nodes, *, string_capacity: int = DEFAULT_STRING_CAPACITY) -> Analysi
                     f'SHOW {node.name}: no WINDOW {node.name} is declared '
                     f'(SHOW needs named windows){hint}',
                 )
+        elif isinstance(node, ast.Focus) and node.name in {c.canvas_name for c in canvases}:
+            if node.name in variables:  # M15: FOCUS Name gives a canvas the keyboard
+                raise SourceError(node.line, node.column,
+                                  f'FOCUS {node.name}: {node.name} names both a CANVAS and a variable')
+            continue
         elif isinstance(node, ast.Focus):  # M6
             homes = [
                 w for w in windows
@@ -1781,12 +1818,25 @@ def analyze(nodes, *, string_capacity: int = DEFAULT_STRING_CAPACITY) -> Analysi
         elif isinstance(node, ast.Draw):  # M9
             if not has_canvas:
                 raise SourceError(node.line, node.column, 'DRAW needs a CANVAS declaration')
+            if node.op == 'ON' and node.target not in {c.canvas_name for c in canvases}:  # M15
+                named = ', '.join(c.canvas_name for c in canvases if c.canvas_name) or 'none is named'
+                raise SourceError(node.line, node.column,
+                                  f'DRAW ON {node.target}: no CANVAS {node.target} is declared ({named})')
             for i, value in enumerate(node.values):
-                want = 'STRING' if node.op == 'TEXT' and i == 2 else 'INTEGER'
+                want = 'STRING' if node.op in ('TEXT', 'TYPE') and i == 2 else 'INTEGER'
                 got = expression(value)
                 if got != want:
                     raise SourceError(value.line, value.column,
                                       f'DRAW {node.op} argument {i + 1} must be {want}, got {got}')
+        elif isinstance(node, ast.TypeFont):  # M15 screen typography
+            if not has_canvas:
+                raise SourceError(node.line, node.column, 'TYPE FONT is for DRAW TYPE: it needs a CANVAS declaration')
+            got = expression(node.value)
+            if got != 'INTEGER':
+                raise SourceError(node.value.line, node.value.column, f'TYPE FONT size must be INTEGER, got {got}')
+            if isinstance(node.value, ast.IntLiteral) and node.value.value not in PAGE_SIZES:
+                raise SourceError(node.value.line, node.value.column,
+                                  'a type size is ' + ', '.join(map(str, PAGE_SIZES[:-1])) + f' or {PAGE_SIZES[-1]}')
         elif isinstance(node, ast.TimerSwitch):  # M6
             if timer is None:
                 raise SourceError(
@@ -1813,6 +1863,8 @@ def analyze(nodes, *, string_capacity: int = DEFAULT_STRING_CAPACITY) -> Analysi
         windows=windows,
         menus=menus,
         timer=timer,
+        on_stop=on_stop[0] if on_stop else None,
+        on_stop_line=on_stop[1] if on_stop else 0,
     )
 
 

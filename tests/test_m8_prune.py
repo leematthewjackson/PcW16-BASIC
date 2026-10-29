@@ -102,7 +102,7 @@ class WholeLibraryTests(unittest.TestCase):
                          ("developer-tests/m7_edges.pbas", "m7/m7_edges.prg")):
             with self.subTest(src=src), tempfile.TemporaryDirectory() as tmp:
                 whole = build(self.ROOT / src, Path(tmp) / "w.asm", Path(tmp) / "w.prg", prune=False,
-                              legacy_real_rounding=True)  # M14: as accepted
+                              legacy_real_rounding=True, legacy_tasks_stop=True)  # M14, M15: as accepted
                 self.assertEqual((Path(tmp) / "w.prg").read_bytes(), (self.ROOT / "artifacts" / art).read_bytes())
                 pruned = build(self.ROOT / src, Path(tmp) / "p.asm", Path(tmp) / "p.prg")
                 self.assertLess(pruned.prg_size, whole.prg_size)

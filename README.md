@@ -7,16 +7,17 @@ No assembly language is needed.
 
 | | |
 |---|---|
-| **What you can build** | desktop-style applications (windows, buttons, text fields, lists, menus), drawing programs, editors, record databases, printed reports, and sprite games with timers and held keys. See [what has been built with it](#what-has-been-built-with-it). |
+| **What you can build** | desktop-style applications (windows, buttons, text fields, lists, menus), drawing programs with up to eight canvases, text in Rosanne's twelve dialog fonts and in scalable Swiss and Times type from 6 to 72 points, editors, record databases, printed reports, and sprite games with timers and held keys. Applications can protect unsaved work when Rosanne's Tasks → Stop is chosen. See [what's new](#whats-new-in-100rc2) and [what has been built with it](#what-has-been-built-with-it). |
 | **What you need** | **Python 3.10 or later** (standard library only) and the **Pasmo** Z80 assembler (0.5.3). To run programs: the **XAnne** emulator with your own copy of the PcW16 system, or a PcW16. |
-| **Status** | **PcW16 BASIC Public Preview** (version 1.0.0rc1); free software (GPL-3.0-or-later, with the runtime, libraries and templates under MIT-0: [LICENSING.md](LICENSING.md)). Programs have been tested in XAnne; nothing has been run on a real PcW16 yet. Only Linux has been exercised as the PC side. |
+| **Status** | **PcW16 BASIC Public Preview** (version 1.0.0rc2); free software (GPL-3.0-or-later, with the runtime, libraries and templates under MIT-0: [LICENSING.md](LICENSING.md)). Programs have been tested in XAnne; nothing has been run on a real PcW16 yet. Only Linux has been exercised as the PC side. |
 
 ## Start here
 
 1. **Install** Python and Pasmo: [docs/install.md](docs/install.md).
 2. **Write your first program**: [docs/first-program.md](docs/first-program.md), or the short version below.
-3. **Try the ready-to-run applications** (PAINT II, DESIGNER, JUMPER, SPRITED, MDEDIT IV, the scientific
-   calculator and the tutorials) without compiling anything: [programs/](programs/MANIFEST.md).
+3. **Try the ready-to-run applications** (PAINT II, DESIGNER, JUMPER, SPRITED, MDEDIT IV, the type
+   specimen, the scientific calculator and the tutorials) without compiling anything:
+   [programs/](programs/MANIFEST.md).
 
 [developer-tests/](developer-tests/README.md) holds advanced diagnostics used to develop the compiler in
 the emulator, not beginner examples: some stop with an error on purpose, and some change test files.
@@ -67,6 +68,27 @@ Greeting$ = "Hello!"
 END
 ```
 
+## What's new in 1.0.0rc2
+
+All of this is tested in XAnne (Rosanne 1.12). The full list is in [RELEASE-NOTES.md](RELEASE-NOTES.md) and [CHANGELOG.md](CHANGELOG.md).
+
+- **Several canvases.** `CANVAS Name, width, height, …` declares up to eight named canvases, in any windows.
+  - Each has its own PAINT, MOUSE and KEYS handlers, and draws on itself while they run.
+  - `DRAW ON Name` chooses where other code draws.
+  - `FOCUS Name` gives a canvas the keyboard ([manual, chapter 12](docs/manual/12-drawing.md#several-canvases-draw-on)).
+- **Twelve dialog fonts.** `DRAW FONT n` chooses one of Rosanne's dialog fonts.
+  - `TEXTWIDTH` measures text in that font.
+  - `DRAW TEXT … ALIGN CENTRE | RIGHT` places text about a point.
+- **Scalable type.** `TYPE FONT SWISS | TIMES, size [, BOLD] [, ITALIC]` sets the font of `DRAW TYPE x, y, text$`.
+  - The sizes run from 6 to 72 points, the same fonts as printing.
+  - `TYPEWIDTH` and `TYPEHEIGHT` measure the text.
+- **Tasks → Stop.** A program with menus now ends when Rosanne's Tasks → Stop is chosen.
+  - `ON STOP Handler` runs a FUNCTION first. It can ask about unsaved work and keep the program open.
+  - PAINT II, DESIGNER, SPRITED, MDEDIT IV and CONTACTS IV now do this.
+- **Compatible.** Programs that use none of this compile as before. A program with menus gains a 4-byte table row so that Tasks → Stop ends it.
+
+New examples: `examples/sketchpad.pbas` (two canvases), `examples/fontbook.pbas` (the twelve fonts), `examples/stopguard.pbas` (safe Stop handling) and `examples/m15_specimen.pbas` (all of it together).
+
 ## Where to learn more
 
 | start here | for |
@@ -87,12 +109,13 @@ owner's sessions in XAnne except where noted ([examples/README.md](examples/READ
 
 | program | source | what it shows |
 |---|---|---|
-| PAINT II | `examples/paint2.pbas` | an icon palette loaded from pictures, pattern fills, a floating selection, undo, files |
-| DESIGNER | `examples/designer_m14.pbas` | a screen designer: select, drag, resize, restack; a validated file; export as a picture or as BASIC |
+| PAINT II | `examples/paint2_m15.pbas` | an icon palette loaded from pictures, pattern fills, a floating selection, undo, files; asks before Tasks → Stop discards a picture |
+| DESIGNER | `examples/designer_m15.pbas` | a screen designer: select, drag, resize, restack; a validated file; export as a picture or as BASIC |
 | JUMPER | `examples/jumper.pbas` | a platform game: masked, animated sprites, held keys, gravity, collisions, lives |
-| SPRITED | `examples/sprited_m14.pbas` | a sprite editor with frames and animation |
-| MDEDIT IV | `examples/mdedit4_m14.pbas` | a word-wrapping text editor with files, undo and the clipboard |
-| CONTACTS IV | `examples/contacts4.pbas` | typed records, sorting, searching, safe saving with recovery |
+| SPRITED | `examples/sprited_m15.pbas` | a sprite editor with frames and animation |
+| MDEDIT IV | `examples/mdedit4_m15.pbas` | a word-wrapping text editor with files, undo and the clipboard |
+| CONTACTS IV | `examples/contacts4_m15.pbas` | typed records, sorting, searching, safe saving with recovery |
+| SPECIMEN | `examples/m15_specimen.pbas` | scalable type at every size, dialog fonts, two canvases and a guarded Tasks → Stop |
 | REPORTER | `examples/reporter.pbas` | printed pages, tables and bar charts (the printed bar chart's correction has not yet been retested in XAnne) |
 
 Prebuilt copies of the main programs, byte-identical to what a build here produces, are in

@@ -34,7 +34,7 @@ class ArtifactTests(unittest.TestCase):
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
                 t = Path(tmp)
                 build(ROOT / src, t / f"{name}.asm", t / f"{name}.prg", runtime_sections="all",
-                      legacy_file_safety=True, legacy_real_rounding=True)  # M14: as accepted
+                      legacy_file_safety=True, legacy_real_rounding=True, legacy_tasks_stop=True)  # M14: as accepted
                 image = (t / f"{name}.prg").read_bytes()
                 self.assertEqual(image, (ART / f"{name}.prg").read_bytes())
                 self.assertIn(hashlib.sha256(image).hexdigest(), manifest)
